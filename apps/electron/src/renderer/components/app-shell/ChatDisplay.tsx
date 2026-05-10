@@ -63,6 +63,7 @@ import {
   type AuthRequestTurn,
 } from "@craft-agent/ui"
 import { MemoizedAuthRequestCard } from "@/components/chat/AuthRequestCard"
+import { MemoizedAutomationConfirmationCard } from "@/components/chat/AutomationConfirmationCard"
 import { ChatInputZone, type StructuredInputState, type StructuredResponse, type PermissionResponse, type AdminApprovalResponse } from "./input"
 import type { RichTextInputHandle } from "@/components/ui/rich-text-input"
 import { useBackgroundTasks } from "@/hooks/useBackgroundTasks"
@@ -125,6 +126,7 @@ function getTurnKey(turn: Turn): string {
   if (turn.type === 'user') return `user-${turn.message.id}`
   if (turn.type === 'system') return `system-${turn.message.id}`
   if (turn.type === 'auth-request') return `auth-${turn.message.id}`
+  if (turn.type === 'automation-confirmation') return `automation-confirmation-${turn.message.id}`
   return `turn-${turn.turnId}-${turn.timestamp}`
 }
 
@@ -1665,6 +1667,27 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                             sessionId={session.id}
                             onRespondToCredential={onRespondToCredential}
                             isInteractive={isAuthInteractive}
+                          />
+                        </div>
+                      )
+                    }
+
+                    if (turn.type === 'automation-confirmation') {
+                      const isConfirmationInteractive = !turns.slice(index + 1).some(t => t.type === 'user')
+                      return (
+                        <div
+                          key={turnKey}
+                          ref={el => { if (el) turnRefs.current.set(turnKey, el); else turnRefs.current.delete(turnKey) }}
+                          className={cn(
+                            "mt-2 rounded-lg transition-all duration-200",
+                            isCurrentMatch && "ring-2 ring-info ring-offset-2 ring-offset-background",
+                            isAnyMatch && !isCurrentMatch && "ring-1 ring-info/30"
+                          )}
+                        >
+                          <MemoizedAutomationConfirmationCard
+                            message={turn.message}
+                            sessionId={session.id}
+                            isInteractive={isConfirmationInteractive}
                           />
                         </div>
                       )

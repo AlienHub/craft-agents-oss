@@ -69,6 +69,28 @@ export interface PromptAction {
   thinkingLevel?: ThinkingLevel;
 }
 
+/** A confirmation action - pauses an automation run until the user approves continuing. */
+export interface ConfirmAction {
+  type: 'confirm';
+  title: string;
+  /** Markdown body shown in the confirmation card. Omit it for a compact approval card. */
+  bodyMarkdown?: string;
+  /** HTML body shown in the confirmation card. Renderers may sanitize or markdown-render it. */
+  bodyHtml?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  /** Prompt sent to the same session after the user confirms. */
+  onConfirmPrompt?: string;
+  /** Optional prompt sent to the same session after the user cancels. */
+  onCancelPrompt?: string;
+  /** LLM connection slug for the created session (falls back to default if not found) */
+  llmConnection?: string;
+  /** Model ID for the created session (falls back to provider default if invalid) */
+  model?: string;
+  /** Thinking level for prompts sent after confirmation/cancellation. */
+  thinkingLevel?: ThinkingLevel;
+}
+
 /** HTTP method for webhook actions */
 export type WebhookHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -99,7 +121,7 @@ export interface WebhookAction {
   auth?: WebhookAuth;
 }
 
-export type AutomationAction = PromptAction | WebhookAction;
+export type AutomationAction = PromptAction | ConfirmAction | WebhookAction;
 
 // ============================================================================
 // Condition Types
@@ -258,6 +280,12 @@ export interface PendingPrompt {
   thinkingLevel?: ThinkingLevel;
   /** Forum-topic name to bind the new session to (Telegram supergroup, when paired). */
   telegramTopic?: string;
+  /** Confirmation gate to show after this prompt finishes, if the matcher has a prompt -> confirm pipeline. */
+  confirmation?: ConfirmAction;
+  /** Actions to execute only after the confirmation gate is approved. */
+  onConfirmActions?: AutomationAction[];
+  /** Event env captured when the automation was triggered. */
+  continuationEnv?: Record<string, string>;
 }
 
 export interface AutomationResult {

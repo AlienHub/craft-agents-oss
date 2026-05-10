@@ -74,7 +74,14 @@ export interface AuthRequestTurn {
   timestamp: number
 }
 
-export type Turn = AssistantTurn | UserTurn | SystemTurn | AuthRequestTurn
+/** Represents an automation confirmation card. */
+export interface AutomationConfirmationTurn {
+  type: 'automation-confirmation'
+  message: Message
+  timestamp: number
+}
+
+export type Turn = AssistantTurn | UserTurn | SystemTurn | AuthRequestTurn | AutomationConfirmationTurn
 
 /**
  * Build a stable UI identity key for an assistant turn card.
@@ -415,6 +422,18 @@ export function groupMessagesByTurn(messages: Message[]): Turn[] {
       flushCurrentTurn()
       turns.push({
         type: 'auth-request',
+        message,
+        timestamp: message.timestamp,
+      })
+      continue
+    }
+
+    // Automation confirmation messages are standalone turns.
+    if (message.role === 'automation-confirmation') {
+      if (currentTurn) currentTurn.isComplete = true
+      flushCurrentTurn()
+      turns.push({
+        type: 'automation-confirmation',
         message,
         timestamp: message.timestamp,
       })

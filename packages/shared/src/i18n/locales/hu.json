@@ -106,6 +106,8 @@
   "automations.testFailed": "Teszt sikertelen",
   "automations.testPassed": "Teszt sikeres",
   "automations.testRunning": "Teszt fut...",
+  "automations.testWaitingForConfirmation": "Megerősítésre vár",
+  "automations.testWaitingForConfirmationDescription": "A prompt befejeződött, és egy megerősítő kártya került ugyanabba a munkamenetbe. Jóváhagyás után folytatódnak a további műveletek.",
   "automations.webhookAttempts": "Kísérletek",
   "automations.webhookDuration": "Időtartam",
   "automations.webhookError": "Hiba",

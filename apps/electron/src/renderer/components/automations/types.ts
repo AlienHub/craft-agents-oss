@@ -79,7 +79,21 @@ export interface WebhookAction {
   auth?: { type: 'basic'; username: string; password: string } | { type: 'bearer'; token: string }
 }
 
-export type AutomationAction = PromptAction | WebhookAction
+export interface ConfirmAction {
+  type: 'confirm'
+  title: string
+  bodyMarkdown?: string
+  bodyHtml?: string
+  confirmLabel?: string
+  cancelLabel?: string
+  onConfirmPrompt?: string
+  onCancelPrompt?: string
+  llmConnection?: string
+  model?: string
+  thinkingLevel?: ThinkingLevel
+}
+
+export type AutomationAction = PromptAction | ConfirmAction | WebhookAction
 
 // ============================================================================
 // Conditions (mirrored from packages/shared/src/automations/types.ts)
@@ -289,7 +303,7 @@ export interface ExecutionEntry {
 // Test Panel
 // ============================================================================
 
-export type TestState = 'idle' | 'running' | 'success' | 'error'
+export type TestState = 'idle' | 'running' | 'waiting_for_confirmation' | 'success' | 'error'
 
 export interface TestResult {
   state: TestState
@@ -373,6 +387,7 @@ interface AutomationsConfigFile {
 
 type RawAction =
   | { type: 'prompt'; prompt: string; llmConnection?: string; model?: string; thinkingLevel?: ThinkingLevel }
+  | { type: 'confirm'; title: string; bodyMarkdown?: string; bodyHtml?: string; confirmLabel?: string; cancelLabel?: string; onConfirmPrompt?: string; onCancelPrompt?: string; llmConnection?: string; model?: string; thinkingLevel?: ThinkingLevel }
   | { type: 'webhook'; url: string; method?: string; headers?: Record<string, string>; bodyFormat?: 'json' | 'form' | 'raw'; body?: unknown; captureResponse?: boolean; auth?: WebhookAction['auth'] }
 
 interface AutomationsConfigMatcher {
@@ -397,6 +412,11 @@ function deriveAutomationName(event: string, matcher: AutomationsConfigMatcher):
 
   if (firstAction.type === 'webhook') {
     const label = `Webhook ${firstAction.method ?? DEFAULT_WEBHOOK_METHOD} ${firstAction.url}`
+    return label.length > 40 ? label.slice(0, 40) + '...' : label
+  }
+
+  if (firstAction.type === 'confirm') {
+    const label = `Confirm ${firstAction.title}`
     return label.length > 40 ? label.slice(0, 40) + '...' : label
   }
 
@@ -457,7 +477,7 @@ export function parseAutomationsConfig(json: unknown): AutomationListItem[] {
       if (!rawActions || !Array.isArray(rawActions) || rawActions.length === 0) continue
 
       const actions: AutomationAction[] = rawActions
-        .filter((a): a is AutomationAction => a.type === 'prompt' || a.type === 'webhook')
+        .filter((a): a is AutomationAction => a.type === 'prompt' || a.type === 'confirm' || a.type === 'webhook')
       if (actions.length === 0) continue
 
       const rawTopic = (matcher as { telegramTopic?: unknown }).telegramTopic

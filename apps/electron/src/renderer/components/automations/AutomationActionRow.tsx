@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { THINKING_LEVELS } from '@craft-agent/shared/agent/thinking-levels'
-import type { AutomationAction, PromptAction } from './types'
+import type { AutomationAction, ConfirmAction, PromptAction } from './types'
 import { ActionTypeIcon } from './ActionTypeIcon'
 import { DEFAULT_WEBHOOK_METHOD } from './constants'
 
@@ -51,6 +51,16 @@ function WebhookText({ action }: { action: Extract<AutomationAction, { type: 'we
         <span className="text-foreground/40 ml-1">({action.bodyFormat})</span>
       )}
     </span>
+  )
+}
+
+function ConfirmText({ action }: { action: ConfirmAction }) {
+  const body = action.bodyMarkdown ?? action.bodyHtml
+  return (
+    <div className="space-y-1">
+      <div className="text-sm break-words font-medium text-foreground/80">{action.title}</div>
+      {body && <div className="text-xs text-foreground/60 line-clamp-2 break-words">{body}</div>}
+    </div>
   )
 }
 
@@ -105,7 +115,6 @@ function PromptActionBadges({ action, t }: { action: PromptAction; t: (key: stri
 
 export function AutomationActionRow({ action, index, className }: AutomationActionRowProps) {
   const { t } = useTranslation()
-  const isWebhook = action.type === 'webhook'
 
   return (
     <div className={cn('flex items-start gap-3 px-4 py-3', className)}>
@@ -119,8 +128,10 @@ export function AutomationActionRow({ action, index, className }: AutomationActi
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        {isWebhook ? (
+        {action.type === 'webhook' ? (
           <WebhookText action={action} />
+        ) : action.type === 'confirm' ? (
+          <ConfirmText action={action} />
         ) : (
           <>
             <PromptText text={action.prompt} t={t} />

@@ -106,6 +106,8 @@
   "automations.testFailed": "テスト失敗",
   "automations.testPassed": "テスト成功",
   "automations.testRunning": "テストを実行中...",
+  "automations.testWaitingForConfirmation": "確認待ち",
+  "automations.testWaitingForConfirmationDescription": "プロンプトが完了し、同じセッションに確認カードが追加されました。承認すると残りのアクションが続行されます。",
   "automations.webhookAttempts": "試行回数",
   "automations.webhookDuration": "所要時間",
   "automations.webhookError": "エラー",

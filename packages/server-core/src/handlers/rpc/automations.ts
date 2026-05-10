@@ -5,6 +5,7 @@ import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { appendAutomationHistoryEntry } from '@craft-agent/shared/automations/history-store'
 import { AUTOMATION_HISTORY_MAX_RUNS_PER_MATCHER } from '@craft-agent/shared/automations/constants'
 import type { RpcServer } from '@craft-agent/server-core/transport'
+import type { AutomationAction } from '@craft-agent/shared/automations'
 import type { HandlerDeps } from '../handler-deps'
 
 // History file name — matches AUTOMATIONS_HISTORY_FILE from @craft-agent/shared/automations/constants
@@ -100,10 +101,46 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
     if (!workspace) throw new Error('Workspace not found')
 
     const results: import('@craft-agent/shared/protocol').TestAutomationActionResult[] = []
-    const { parsePromptReferences } = await import('@craft-agent/shared/automations')
+    const { parsePromptReferences, expandEnvVars } = await import('@craft-agent/shared/automations')
     const { executeWebhookRequest, createWebhookHistoryEntry, createPromptHistoryEntry } = await import('@craft-agent/shared/automations/webhook-utils')
+    let waitingForConfirmation = false
 
-    for (const action of payload.actions) {
+    const firstConfirmIndex = payload.actions.findIndex(action => action.type === 'confirm')
+    if (firstConfirmIndex >= 0) {
+      if (firstConfirmIndex !== 1 || payload.actions[0]?.type !== 'prompt') {
+        return {
+          actions: [{
+            type: 'confirm',
+            success: false,
+            stderr: 'Approval workflows must use action order: prompt -> confirm -> follow-up actions',
+            duration: 0,
+          }],
+        } satisfies import('@craft-agent/shared/protocol').TestAutomationResult
+      }
+
+      for (let actionIndex = 1; actionIndex < payload.actions.length; actionIndex++) {
+        if (payload.actions[actionIndex]?.type === 'confirm' && payload.actions[actionIndex - 1]?.type !== 'prompt') {
+          return {
+            actions: [{
+              type: 'confirm',
+              success: false,
+              stderr: 'Follow-up confirm actions must immediately follow a prompt action',
+              duration: 0,
+            }],
+          } satisfies import('@craft-agent/shared/protocol').TestAutomationResult
+        }
+      }
+    }
+
+    for (let actionIndex = 0; actionIndex < payload.actions.length; actionIndex++) {
+      const action = payload.actions[actionIndex]
+      const nextAction = payload.actions[actionIndex + 1]
+      const confirmation = action.type === 'prompt' && nextAction?.type === 'confirm'
+        ? nextAction
+        : undefined
+      const onConfirmActions = confirmation
+        ? payload.actions.slice(actionIndex + 2) as AutomationAction[]
+        : undefined
       const start = Date.now()
 
       if (action.type === 'webhook') {
@@ -137,12 +174,22 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
         continue
       }
 
+      if (action.type === 'confirm') {
+        results.push({
+          type: 'confirm',
+          success: false,
+          stderr: 'Confirm actions are only supported as prompt -> confirm approval gates',
+          duration: Date.now() - start,
+        })
+        continue
+      }
+
       // Prompt action
       // Parse @mentions from the prompt to resolve source/skill references
       const references = parsePromptReferences(action.prompt)
 
       try {
-        const { sessionId } = await deps.sessionManager.executePromptAutomation({
+        const { sessionId, finalText } = await deps.sessionManager.executePromptAutomation({
           workspaceId: payload.workspaceId,
           workspaceRootPath: workspace.rootPath,
           prompt: action.prompt,
@@ -171,6 +218,41 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
             log.warn('[Automations] Failed to write history:', e)
           }
         }
+
+        if (confirmation) {
+          const continuationEnv = {
+            AUTOMATION_OUTPUT: finalText ?? '',
+            CRAFT_AUTOMATION_OUTPUT: finalText ?? '',
+            CRAFT_AUTOMATION_SESSION_ID: sessionId,
+          }
+          const configuredBody = confirmation.bodyMarkdown ?? confirmation.bodyHtml
+          const confirmStart = Date.now()
+
+          await deps.sessionManager.addAutomationConfirmationToSession({
+            sessionId,
+            matcherId: payload.automationId,
+            title: expandEnvVars(confirmation.title, continuationEnv),
+            body: configuredBody ? expandEnvVars(configuredBody, continuationEnv) : '',
+            bodyFormat: confirmation.bodyMarkdown || !confirmation.bodyHtml ? 'markdown' : 'html',
+            confirmLabel: confirmation.confirmLabel,
+            cancelLabel: confirmation.cancelLabel,
+            onConfirmPrompt: confirmation.onConfirmPrompt,
+            onCancelPrompt: confirmation.onCancelPrompt,
+            onConfirmActions,
+            continuationEnv,
+          })
+
+          results.push({
+            type: 'confirm',
+            success: true,
+            sessionId,
+            duration: Date.now() - confirmStart,
+            waitingForConfirmation: true,
+          })
+
+          waitingForConfirmation = true
+          break
+        }
       } catch (err: unknown) {
         results.push({
           type: 'prompt',
@@ -191,7 +273,7 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
       }
     }
 
-    return { actions: results } satisfies import('@craft-agent/shared/protocol').TestAutomationResult
+    return { actions: results, waitingForConfirmation } satisfies import('@craft-agent/shared/protocol').TestAutomationResult
   })
 
   // Automation enabled state management (toggle enabled/disabled in automations.json)

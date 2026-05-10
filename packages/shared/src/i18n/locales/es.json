@@ -106,6 +106,8 @@
   "automations.testFailed": "Prueba fallida",
   "automations.testPassed": "Prueba superada",
   "automations.testRunning": "Ejecutando prueba...",
+  "automations.testWaitingForConfirmation": "Esperando confirmación",
+  "automations.testWaitingForConfirmationDescription": "El prompt terminó y se añadió una tarjeta de confirmación a la misma sesión. Apruébala para continuar con las acciones restantes.",
   "automations.webhookAttempts": "Intentos",
   "automations.webhookDuration": "Duración",
   "automations.webhookError": "Error",

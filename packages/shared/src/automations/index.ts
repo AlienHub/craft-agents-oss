@@ -19,6 +19,7 @@ export type {
   AppEvent,
   AgentEvent,
   AutomationEvent,
+  ConfirmAction,
   PromptAction,
   WebhookAction,
   WebhookHttpMethod,
@@ -66,7 +67,7 @@ export { buildEnvFromSdkInput } from './sdk-bridge.ts';
 // Utilities
 // ============================================================================
 
-export { parsePromptReferences } from './utils.ts';
+export { expandEnvVars, parsePromptReferences } from './utils.ts';
 
 // ============================================================================
 // Re-exports from sub-modules

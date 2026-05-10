@@ -14,7 +14,8 @@ export type MessageRole =
   | 'info'
   | 'warning'
   | 'plan'
-  | 'auth-request';
+  | 'auth-request'
+  | 'automation-confirmation';
 
 /**
  * Credential input modes for different auth types
@@ -40,6 +41,11 @@ export type AuthRequestType =
  * Auth request status
  */
 export type AuthStatus = 'pending' | 'completed' | 'cancelled' | 'failed';
+
+/**
+ * Automation confirmation lifecycle status.
+ */
+export type AutomationConfirmationStatus = 'pending' | 'confirmed' | 'cancelled';
 
 /**
  * Tool execution status
@@ -329,6 +335,20 @@ export interface Message {
   authError?: string;             // Error message if auth failed
   authEmail?: string;             // Authenticated email (for OAuth)
   authWorkspace?: string;         // Authenticated workspace (for Slack)
+  // Automation-confirmation-specific fields (for role='automation-confirmation')
+  automationConfirmationId?: string;
+  automationConfirmationTitle?: string;
+  automationConfirmationBody?: string;
+  automationConfirmationBodyFormat?: 'markdown' | 'html';
+  automationConfirmationConfirmLabel?: string;
+  automationConfirmationCancelLabel?: string;
+  automationConfirmationStatus?: AutomationConfirmationStatus;
+  automationConfirmationOnConfirmPrompt?: string;
+  automationConfirmationOnCancelPrompt?: string;
+  automationConfirmationOnConfirmActions?: unknown[];
+  automationConfirmationContinuationEnv?: Record<string, string>;
+  automationConfirmationMatcherId?: string;
+  automationConfirmationRespondedAt?: number;
 }
 
 /**
@@ -408,6 +428,20 @@ export interface StoredMessage {
   authError?: string;
   authEmail?: string;
   authWorkspace?: string;
+  // Automation-confirmation-specific fields (for type='automation-confirmation')
+  automationConfirmationId?: string;
+  automationConfirmationTitle?: string;
+  automationConfirmationBody?: string;
+  automationConfirmationBodyFormat?: 'markdown' | 'html';
+  automationConfirmationConfirmLabel?: string;
+  automationConfirmationCancelLabel?: string;
+  automationConfirmationStatus?: AutomationConfirmationStatus;
+  automationConfirmationOnConfirmPrompt?: string;
+  automationConfirmationOnCancelPrompt?: string;
+  automationConfirmationOnConfirmActions?: unknown[];
+  automationConfirmationContinuationEnv?: Record<string, string>;
+  automationConfirmationMatcherId?: string;
+  automationConfirmationRespondedAt?: number;
   // Queued: user message that is waiting to be processed (persisted for recovery)
   isQueued?: boolean;
 }

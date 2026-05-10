@@ -29,6 +29,20 @@ export const PromptActionSchema = z.object({
   thinkingLevel: ThinkingLevelInputSchema,
 });
 
+export const ConfirmActionSchema = z.object({
+  type: z.literal('confirm'),
+  title: z.string().min(1, 'Confirmation title cannot be empty'),
+  bodyMarkdown: z.string().optional(),
+  bodyHtml: z.string().optional(),
+  confirmLabel: z.string().min(1).optional(),
+  cancelLabel: z.string().min(1).optional(),
+  onConfirmPrompt: z.string().min(1).optional(),
+  onCancelPrompt: z.string().min(1).optional(),
+  llmConnection: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+  thinkingLevel: ThinkingLevelInputSchema,
+});
+
 export const WebhookActionSchema = z.object({
   type: z.literal('webhook'),
   url: z.string().min(1, 'URL cannot be empty').refine(
@@ -66,6 +80,7 @@ export const WebhookActionSchema = z.object({
 /** Accepts prompt and webhook actions strictly; passes through legacy/unknown action types without erroring */
 export const ActionDefinitionSchema = z.union([
   PromptActionSchema,
+  ConfirmActionSchema,
   WebhookActionSchema,
   z.object({ type: z.string() }).passthrough(),
 ]);

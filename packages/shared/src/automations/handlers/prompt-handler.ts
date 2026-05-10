@@ -8,9 +8,9 @@
 import { createLogger } from '../../utils/debug.ts';
 import type { EventBus, BaseEventPayload } from '../event-bus.ts';
 import type { AutomationHandler, PromptHandlerOptions, AutomationsConfigProvider } from './types.ts';
-import { APP_EVENTS, type AutomationEvent, type PromptAction, type PendingPrompt, type AppEvent } from '../types.ts';
+import { APP_EVENTS, type AutomationAction, type AutomationEvent, type ConfirmAction, type PromptAction, type PendingPrompt, type AppEvent } from '../types.ts';
 import type { PermissionMode } from '../../agent/mode-types.ts';
-import { matcherMatches, buildEnvFromPayload, expandEnvVars, parsePromptReferences } from '../utils.ts';
+import { matcherMatches, buildEnvFromPayload, buildWebhookEnv, expandEnvVars, parsePromptReferences } from '../utils.ts';
 import { deriveAutomationName } from '../name-utils.ts';
 
 const log = createLogger('prompt-handler');
@@ -52,21 +52,42 @@ export class PromptHandler implements AutomationHandler {
     const matchers = this.configProvider.getMatchersForEvent(event);
     if (matchers.length === 0) return;
 
-    // Group prompt actions by matcher for per-matcher history
+    // Group prompt/confirm actions by matcher for per-matcher history
     const matcherPrompts: Array<{
       matcherId: string | undefined;
       automationName: string;
       telegramTopic: string | undefined;
-      prompts: Array<{ prompt: PromptAction; labels?: string[]; permissionMode?: PermissionMode }>;
+      prompts: Array<{ prompt: PromptAction; labels?: string[]; permissionMode?: PermissionMode; confirmation?: ConfirmAction; onConfirmActions?: AutomationAction[] }>;
     }> = [];
 
     for (const matcher of matchers) {
       if (!matcherMatches(matcher, event, payload as unknown as Record<string, unknown>)) continue;
 
-      const prompts: Array<{ prompt: PromptAction; labels?: string[]; permissionMode?: PermissionMode }> = [];
-      for (const action of matcher.actions) {
-        if (action.type === 'prompt') {
-          prompts.push({ prompt: action, labels: matcher.labels, permissionMode: matcher.permissionMode });
+      const prompts: Array<{ prompt: PromptAction; labels?: string[]; permissionMode?: PermissionMode; confirmation?: ConfirmAction; onConfirmActions?: AutomationAction[] }> = [];
+      const confirmIndex = matcher.actions.findIndex(action => action.type === 'confirm');
+
+      if (confirmIndex >= 0) {
+        if (confirmIndex === 1 && matcher.actions[0]?.type === 'prompt') {
+          const prompt = matcher.actions[0] as PromptAction;
+          const confirmation = matcher.actions[confirmIndex] as ConfirmAction;
+          prompts.push({
+            prompt,
+            labels: matcher.labels,
+            permissionMode: matcher.permissionMode,
+            confirmation,
+            onConfirmActions: matcher.actions.slice(confirmIndex + 1),
+          });
+        } else {
+          log.warn(
+            `[PromptHandler] Ignoring unsupported confirmation workflow for matcher ${matcher.id ?? deriveAutomationName(event, matcher)}. ` +
+            'Use action order: prompt -> confirm -> follow-up actions.'
+          );
+        }
+      } else {
+        for (const action of matcher.actions) {
+          if (action.type === 'prompt') {
+            prompts.push({ prompt: action, labels: matcher.labels, permissionMode: matcher.permissionMode });
+          }
         }
       }
       if (prompts.length > 0) {
@@ -87,6 +108,7 @@ export class PromptHandler implements AutomationHandler {
 
     // Build environment variables
     const env = buildEnvFromPayload(event, payload);
+    const webhookEnv = buildWebhookEnv(event, payload);
 
     // Process prompts per matcher
     const pendingPrompts: PendingPrompt[] = [];
@@ -97,7 +119,7 @@ export class PromptHandler implements AutomationHandler {
       const expandedTopic = telegramTopic ? expandEnvVars(telegramTopic, env).trim() : undefined;
       const finalTopic = expandedTopic && expandedTopic.length > 0 ? expandedTopic : undefined;
 
-      for (const { prompt, labels, permissionMode } of prompts) {
+      for (const { prompt, labels, permissionMode, confirmation, onConfirmActions } of prompts) {
         // Expand environment variables in the prompt
         const expandedPrompt = expandEnvVars(prompt.prompt, env);
 
@@ -119,6 +141,9 @@ export class PromptHandler implements AutomationHandler {
           model: prompt.model,
           thinkingLevel: prompt.thinkingLevel,
           telegramTopic: finalTopic,
+          confirmation,
+          onConfirmActions,
+          continuationEnv: webhookEnv,
         });
       }
 
@@ -129,6 +154,7 @@ export class PromptHandler implements AutomationHandler {
       log.debug(`[PromptHandler] Delivering ${pendingPrompts.length} prompts`);
       this.options.onPromptsReady(pendingPrompts);
     }
+
   }
 
   /**

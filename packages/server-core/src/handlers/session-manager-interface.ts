@@ -228,7 +228,9 @@ export interface ISessionManager {
    */
   refreshConnectionRuntime(connectionSlug: string): Promise<void>
   completeAuthRequest(sessionId: string, result: AuthResult): Promise<void>
-  executePromptAutomation(input: ExecutePromptAutomationInput): Promise<{ sessionId: string }>
+  executePromptAutomation(input: ExecutePromptAutomationInput): Promise<{ sessionId: string; finalText?: string }>
+  addAutomationConfirmationToSession(input: AddAutomationConfirmationInput): Promise<{ messageId: string }>
+  respondToAutomationConfirmation(sessionId: string, messageId: string, confirmed: boolean): Promise<void>
 
   /**
    * Install a callback invoked from `executePromptAutomation` after a session
@@ -267,4 +269,18 @@ export interface ExecutePromptAutomationInput {
    * (created on first use). Silently ignored when prerequisites aren't met.
    */
   telegramTopic?: string
+}
+
+export interface AddAutomationConfirmationInput {
+  sessionId: string
+  matcherId?: string
+  title: string
+  body: string
+  bodyFormat: 'markdown' | 'html'
+  confirmLabel?: string
+  cancelLabel?: string
+  onConfirmPrompt?: string
+  onCancelPrompt?: string
+  onConfirmActions?: import('@craft-agent/shared/automations').AutomationAction[]
+  continuationEnv?: Record<string, string>
 }
