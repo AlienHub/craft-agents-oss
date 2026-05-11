@@ -1173,6 +1173,7 @@
   "skillsList.managedByProject": "Managed by project",
   "skillsList.noSkillsConfigured": "No skills configured",
   "skillsList.projectBadge": "project",
+  "skillsList.searchPlaceholder": "Search skills...",
   "sourceInfo.accessRules": "Access rules for Explore mode.",
   "sourceInfo.apiEndpointsAllowed": "API endpoints allowed in Explore mode.",
   "sourceInfo.authenticateToViewData": "Authenticate with this source to view available data",

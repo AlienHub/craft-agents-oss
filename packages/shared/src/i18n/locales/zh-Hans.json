@@ -1173,6 +1173,7 @@
   "skillsList.managedByProject": "由项目管理",
   "skillsList.noSkillsConfigured": "未配置技能",
   "skillsList.projectBadge": "项目",
+  "skillsList.searchPlaceholder": "搜索技能...",
   "sourceInfo.accessRules": "探索模式的访问规则。",
   "sourceInfo.apiEndpointsAllowed": "探索模式允许的 API 端点。",
   "sourceInfo.authenticateToViewData": "认证此数据源以查看可用数据",

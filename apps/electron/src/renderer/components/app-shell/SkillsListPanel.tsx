@@ -9,6 +9,7 @@ import { SkillMenu } from './SkillMenu'
 import { SendResourceToWorkspaceDialog } from './SendResourceToWorkspaceDialog'
 import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
 import { useActiveWorkspace, useAppShellContext } from '@/context/AppShellContext'
+import { SessionSearchHeader } from './SessionSearchHeader'
 import type { LoadedSkill } from '../../../shared/types'
 
 export interface SkillsListPanelProps {
@@ -36,20 +37,43 @@ export function SkillsListPanel({
   const { workspaces, activeWorkspaceId } = useAppShellContext()
   const hasOtherWorkspaces = workspaces.length > 1
 
+  // Search state
+  const [searchQuery, setSearchQuery] = React.useState('')
+
   // Send to Workspace dialog state
   const [sendDialogOpen, setSendDialogOpen] = React.useState(false)
   const [sendResourceSlug, setSendResourceSlug] = React.useState<string | null>(null)
   const [sendResourceLabel, setSendResourceLabel] = React.useState('')
 
+  // Filter skills by search query (name or description)
+  const filteredSkills = React.useMemo(() => {
+    if (!searchQuery.trim()) return skills
+    const query = searchQuery.toLowerCase()
+    return skills.filter(skill =>
+      skill.metadata.name.toLowerCase().includes(query) ||
+      (skill.metadata.description?.toLowerCase().includes(query) ?? false)
+    )
+  }, [skills, searchQuery])
+
   return (
     <>
     <EntityPanel<LoadedSkill>
-      items={skills}
+      items={filteredSkills}
       getId={(s) => s.slug}
       selection={skillSelection}
       selectedId={selectedSkillSlug}
       onItemClick={onSkillClick}
       className={className}
+      header={
+        <div className="px-2 pt-2 pb-1">
+          <SessionSearchHeader
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            onSearchClose={searchQuery ? () => setSearchQuery('') : undefined}
+            placeholder={t('skillsList.searchPlaceholder')}
+          />
+        </div>
+      }
       emptyState={
         <EntityListEmptyScreen
           icon={<Zap />}
