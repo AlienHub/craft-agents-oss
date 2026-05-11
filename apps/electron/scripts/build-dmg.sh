@@ -205,12 +205,29 @@ for dep in interceptor-common.ts feature-flags.ts interceptor-request-utils.ts; 
   fi
 done
 
-# 6. Build Electron app
+# 6b. Copy Pi Agent Server to resources/
+#     electron-builder.yml ships resources/pi-agent-server/**/* as extraResources
+PI_AGENT_SERVER_SOURCE="$ROOT_DIR/packages/pi-agent-server/dist/index.js"
+if [ -f "$PI_AGENT_SERVER_SOURCE" ]; then
+    echo "Copying Pi Agent Server to resources..."
+    mkdir -p "$ELECTRON_DIR/resources/pi-agent-server"
+    cp "$PI_AGENT_SERVER_SOURCE" "$ELECTRON_DIR/resources/pi-agent-server/"
+    # Also copy koffi (Pi SDK native binding) - resolve from root node_modules
+    KOFFI_SOURCE="$ROOT_DIR/node_modules/koffi"
+    if [ -d "$KOFFI_SOURCE" ]; then
+        mkdir -p "$ELECTRON_DIR/resources/pi-agent-server/node_modules"
+        cp -r "$KOFFI_SOURCE" "$ELECTRON_DIR/resources/pi-agent-server/node_modules/"
+    fi
+else
+    echo "Warning: pi-agent-server not found at $PI_AGENT_SERVER_SOURCE. Pi sessions may not work."
+fi
+
+# 7. Build Electron app
 echo "Building Electron app..."
 cd "$ROOT_DIR"
 bun run electron:build
 
-# 7. Package with electron-builder
+# 8. Package with electron-builder
 echo "Packaging app with electron-builder..."
 cd "$ELECTRON_DIR"
 
@@ -244,7 +261,7 @@ fi
 # Run electron-builder
 npx electron-builder $BUILDER_ARGS
 
-# 8. Verify the DMG was built
+# 9. Verify the DMG was built
 # electron-builder.yml uses artifactName to output: Craft-Agents-${arch}.dmg
 DMG_NAME="Craft-Agents-${ARCH}.dmg"
 DMG_PATH="$ELECTRON_DIR/release/$DMG_NAME"
