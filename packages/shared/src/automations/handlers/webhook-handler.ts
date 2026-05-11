@@ -146,6 +146,7 @@ export class WebhookHandler implements AutomationHandler {
 
     for (const matcher of matchers) {
       if (!matcherMatches(matcher, event, payload as unknown as Record<string, unknown>)) continue;
+      if (matcher.actions.some(action => action.type === 'confirm')) continue;
 
       for (const action of matcher.actions) {
         if (action.type === 'webhook') {

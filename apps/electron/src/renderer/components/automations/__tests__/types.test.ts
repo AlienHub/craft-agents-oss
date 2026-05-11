@@ -43,6 +43,36 @@ describe('parseAutomationsConfig', () => {
     expect(items[0].actions[0].type).toBe('prompt')
   })
 
+  it('parses confirm actions', () => {
+    const config = {
+      version: 2,
+      automations: {
+        SchedulerTick: [{
+          name: 'AI股票报告',
+          cron: '* * * * *',
+          actions: [{
+            type: 'confirm',
+            title: '发送 AI 股票报告？',
+            bodyMarkdown: '确认后将生成 AI 相关公司股票简报。',
+            confirmLabel: '生成报告',
+            cancelLabel: '跳过',
+            onConfirmPrompt: '生成报告',
+          }],
+        }],
+      },
+    }
+
+    const items = parseAutomationsConfig(config)
+
+    expect(items).toHaveLength(1)
+    expect(items[0].actions[0].type).toBe('confirm')
+    expect(items[0].actions[0]).toMatchObject({
+      title: '发送 AI 股票报告？',
+      bodyMarkdown: '确认后将生成 AI 相关公司股票简报。',
+      onConfirmPrompt: '生成报告',
+    })
+  })
+
   it('parses multiple events with multiple matchers', () => {
     const config = {
       version: 2,

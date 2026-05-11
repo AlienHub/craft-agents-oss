@@ -38,6 +38,8 @@ import type {
   SessionUnsharedEvent,
   AuthRequestEvent,
   AuthCompletedEvent,
+  AutomationConfirmationRequestedEvent,
+  AutomationConfirmationUpdatedEvent,
   UsageUpdateEvent,
   Effect,
 } from '../types'
@@ -906,6 +908,47 @@ export function handleAuthCompleted(
       session: {
         ...session,
         messages: updatedMessages,
+      },
+      streaming,
+    },
+    effects: [],
+  }
+}
+
+export function handleAutomationConfirmationRequested(
+  state: SessionState,
+  event: AutomationConfirmationRequestedEvent
+): ProcessResult {
+  const { session, streaming } = state
+
+  return {
+    state: {
+      session: appendMessage(session, event.message),
+      streaming,
+    },
+    effects: [],
+  }
+}
+
+export function handleAutomationConfirmationUpdated(
+  state: SessionState,
+  event: AutomationConfirmationUpdatedEvent
+): ProcessResult {
+  const { session, streaming } = state
+
+  return {
+    state: {
+      session: {
+        ...session,
+        messages: session.messages.map(message =>
+          message.id === event.messageId
+            ? {
+                ...message,
+                automationConfirmationStatus: event.status,
+                automationConfirmationRespondedAt: event.respondedAt,
+              }
+            : message
+        ),
       },
       streaming,
     },

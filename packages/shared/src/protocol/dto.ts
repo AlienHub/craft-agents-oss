@@ -205,6 +205,8 @@ export type SessionEvent =
   | { type: 'session_unshared'; sessionId: string }
   | { type: 'auth_request'; sessionId: string; message: Message; request: SharedAuthRequest }
   | { type: 'auth_completed'; sessionId: string; requestId: string; success: boolean; cancelled?: boolean; error?: string }
+  | { type: 'automation_confirmation_requested'; sessionId: string; message: Message }
+  | { type: 'automation_confirmation_updated'; sessionId: string; messageId: string; status: 'confirmed' | 'cancelled'; respondedAt: number }
   | { type: 'source_activated'; sessionId: string; sourceSlug: string; originalMessage: string }
   | { type: 'usage_update'; sessionId: string; tokenUsage: { inputTokens: number; contextWindow?: number } }
   | { type: 'message_annotations_updated'; sessionId: string; messageId: string; annotations: AnnotationV1[] }
@@ -246,6 +248,7 @@ export type SessionCommand =
   | { type: 'markCompactionComplete' }
   | { type: 'markPendingPlanExecutionDispatched' }
   | { type: 'clearPendingPlanExecution' }
+  | { type: 'respondAutomationConfirmation'; messageId: string; confirmed: boolean }
   | { type: 'addAnnotation'; messageId: string; annotation: AnnotationV1 }
   | { type: 'removeAnnotation'; messageId: string; annotationId: string }
   | { type: 'updateAnnotation'; messageId: string; annotationId: string; patch: Partial<AnnotationV1> }
@@ -526,6 +529,7 @@ export interface ClaudeOAuthResult {
 
 export type TestAutomationAction =
   | { type: 'prompt'; prompt: string; llmConnection?: string; model?: string; thinkingLevel?: ThinkingLevel }
+  | { type: 'confirm'; title: string; bodyMarkdown?: string; bodyHtml?: string; confirmLabel?: string; cancelLabel?: string; onConfirmPrompt?: string; onCancelPrompt?: string; llmConnection?: string; model?: string; thinkingLevel?: ThinkingLevel }
   | { type: 'webhook'; url: string; method?: string; headers?: Record<string, string>; bodyFormat?: 'json' | 'form' | 'raw'; body?: unknown; captureResponse?: boolean; auth?: { type: 'basic'; username: string; password: string } | { type: 'bearer'; token: string } }
 
 export interface TestAutomationPayload {
@@ -541,10 +545,12 @@ export interface TestAutomationPayload {
 
 export type TestAutomationActionResult =
   | { type: 'prompt'; success: boolean; stderr?: string; sessionId?: string; duration: number }
+  | { type: 'confirm'; success: boolean; stderr?: string; sessionId?: string; duration: number; waitingForConfirmation?: boolean }
   | { type: 'webhook'; success: boolean; url: string; statusCode: number; error?: string; duration: number }
 
 export interface TestAutomationResult {
   actions: TestAutomationActionResult[]
+  waitingForConfirmation?: boolean
 }
 
 // ---------------------------------------------------------------------------

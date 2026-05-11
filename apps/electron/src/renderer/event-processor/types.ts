@@ -445,6 +445,20 @@ export interface AuthCompletedEvent {
   error?: string
 }
 
+export interface AutomationConfirmationRequestedEvent {
+  type: 'automation_confirmation_requested'
+  sessionId: string
+  message: Message
+}
+
+export interface AutomationConfirmationUpdatedEvent {
+  type: 'automation_confirmation_updated'
+  sessionId: string
+  messageId: string
+  status: 'confirmed' | 'cancelled'
+  respondedAt: number
+}
+
 /**
  * Source activated event - a source was auto-activated mid-turn
  * Caller should re-send the original message to retry with the now-active source
@@ -512,6 +526,8 @@ export type AgentEvent =
   | SessionUnsharedEvent
   | AuthRequestEvent
   | AuthCompletedEvent
+  | AutomationConfirmationRequestedEvent
+  | AutomationConfirmationUpdatedEvent
   | SourceActivatedEvent
   | UsageUpdateEvent
 

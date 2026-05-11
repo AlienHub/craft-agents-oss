@@ -242,6 +242,8 @@ The plan will be displayed to the user in a special formatted view.
 Use this after editing configuration files to check for errors before they take effect.
 Returns structured validation results with errors, warnings, and suggestions.
 
+For automations, read \`~/.craft-agent/docs/automations.md\` before creating or modifying \`automations.json\`. Approval workflows must start with exactly \`prompt\` → \`confirm\`; do not put \`confirm\` first and do not place multiple setup actions before the first \`confirm\`. The action after \`confirm\` defines what approval does: use \`webhook\` to call an external API, or use another \`prompt\` to send a follow-up message in the same session.
+
 **Targets:**
 - \`config\`: Validates config.json (workspaces, model, settings)
 - \`sources\`: Validates all source config.json files

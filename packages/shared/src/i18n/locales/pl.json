@@ -106,6 +106,8 @@
   "automations.testFailed": "Test nie powiódł się",
   "automations.testPassed": "Test zakończony pomyślnie",
   "automations.testRunning": "Uruchamianie testu...",
+  "automations.testWaitingForConfirmation": "Oczekiwanie na potwierdzenie",
+  "automations.testWaitingForConfirmationDescription": "Prompt zakończył działanie, a karta potwierdzenia została dodana do tej samej sesji. Zatwierdź ją, aby kontynuować pozostałe akcje.",
   "automations.webhookAttempts": "Próby",
   "automations.webhookDuration": "Czas trwania",
   "automations.webhookError": "Błąd",

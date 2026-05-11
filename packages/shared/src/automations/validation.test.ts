@@ -140,6 +140,78 @@ describe('validation', () => {
       expect(action).toEqual({ type: 'prompt', prompt: 'echo' });
     });
 
+    it('should reject confirm-first approval workflows', () => {
+      const config = {
+        automations: {
+          SchedulerTick: [{
+            actions: [{
+              type: 'confirm',
+              title: 'Review report',
+              bodyMarkdown: 'Send the daily report?',
+              confirmLabel: 'Send',
+              cancelLabel: 'Skip',
+              onConfirmPrompt: 'Send the report',
+            }],
+          }],
+        },
+      };
+      const result = validateAutomationsConfig(config);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('Confirm actions must follow a prompt action'))).toBe(true);
+    });
+
+    it('should accept confirm actions without a body for compact approval gates', () => {
+      const config = {
+        automations: {
+          SchedulerTick: [{
+            actions: [
+              { type: 'prompt', prompt: 'Generate report' },
+              { type: 'confirm', title: 'Send report?' },
+              { type: 'webhook', url: 'https://example.com/report' },
+            ],
+          }],
+        },
+      };
+      const result = validateAutomationsConfig(config);
+      expect(result.valid).toBe(true);
+    });
+
+    it('should reject approval workflows with multiple actions before the first confirm', () => {
+      const config = {
+        automations: {
+          SchedulerTick: [{
+            actions: [
+              { type: 'prompt', prompt: 'Collect source data' },
+              { type: 'prompt', prompt: 'Generate report' },
+              { type: 'confirm', title: 'Send report?' },
+              { type: 'webhook', url: 'https://example.com/report' },
+            ],
+          }],
+        },
+      };
+      const result = validateAutomationsConfig(config);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('exactly one prompt before the first confirm'))).toBe(true);
+    });
+
+    it('should accept a second confirm gate when it immediately follows a follow-up prompt', () => {
+      const config = {
+        automations: {
+          SchedulerTick: [{
+            actions: [
+              { type: 'prompt', prompt: 'Generate report' },
+              { type: 'confirm', title: 'Review report?' },
+              { type: 'prompt', prompt: 'Prepare final summary' },
+              { type: 'confirm', title: 'Send final summary?' },
+              { type: 'webhook', url: 'https://example.com/report' },
+            ],
+          }],
+        },
+      };
+      const result = validateAutomationsConfig(config);
+      expect(result.valid).toBe(true);
+    });
+
     it('should reject state conditions with no operator', () => {
       const config = {
         automations: {

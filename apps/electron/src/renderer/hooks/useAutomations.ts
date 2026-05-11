@@ -15,6 +15,25 @@ import { useSetAtom } from 'jotai'
 import { toast } from 'sonner'
 import { automationsAtom } from '@/atoms/automations'
 import { parseAutomationsConfig, type AutomationListItem, type TestResult, type ExecutionEntry } from '@/components/automations/types'
+import type { TestAutomationResult } from '@craft-agent/shared/protocol'
+
+export function summarizeAutomationTestResult(result: TestAutomationResult): TestResult {
+  const actions = result.actions
+  if (!actions || actions.length === 0) {
+    return { state: 'error', stderr: 'No actions to execute' }
+  }
+
+  const hasError = actions.some(a => !a.success)
+  const isWaitingForConfirmation = result.waitingForConfirmation || actions.some(a => a.type === 'confirm' && a.waitingForConfirmation)
+  const stderr = actions.map(a => ('stderr' in a ? a.stderr : 'error' in a ? a.error : undefined)).filter(Boolean).join('\n')
+  const duration = actions.reduce((sum, a) => sum + (a.duration ?? 0), 0)
+
+  return {
+    state: hasError ? 'error' : isWaitingForConfirmation ? 'waiting_for_confirmation' : 'success',
+    stderr: stderr || undefined,
+    duration: duration || undefined,
+  }
+}
 
 async function loadAutomationsFromServer(workspaceId: string): Promise<AutomationListItem[]> {
   const json = await window.electronAPI.getAutomations(workspaceId)
@@ -101,22 +120,9 @@ export function useAutomations(
       labels: automation.labels,
       telegramTopic: automation.telegramTopic,
     }).then((result) => {
-      const actions = result.actions
-      if (!actions || actions.length === 0) {
-        setAutomationTestResults(prev => ({ ...prev, [automationId]: { state: 'error', stderr: 'No actions to execute' } }))
-        return
-      }
-      const hasError = actions.some(a => !a.success)
-      const state = hasError ? 'error' : 'success'
-      const stderr = actions.map(a => ('stderr' in a ? a.stderr : 'error' in a ? a.error : undefined)).filter(Boolean).join('\n')
-      const duration = actions.reduce((sum, a) => sum + (a.duration ?? 0), 0)
       setAutomationTestResults(prev => ({
         ...prev,
-        [automationId]: {
-          state,
-          stderr: stderr || undefined,
-          duration: duration || undefined,
-        },
+        [automationId]: summarizeAutomationTestResult(result),
       }))
     }).catch((err: Error) => {
       setAutomationTestResults(prev => ({ ...prev, [automationId]: { state: 'error', stderr: err.message } }))

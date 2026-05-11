@@ -544,7 +544,9 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
       context:
         'The user is editing automations.json which configures automations. ' +
         'Structure: { version: 2, automations: { EventName: [{ name?, matcher?, cron?, timezone?, permissionMode?, labels?, actions: [...] }] } }. ' +
-        'Each event maps to an array of matcher entries. Each matcher has an actions array ({ type: "prompt", prompt }). ' +
+        'Each event maps to an array of matcher entries. Each matcher has an ordered actions array. Supported actions include prompt, confirm, and webhook. ' +
+        'For approval workflows, the first gate must be exactly prompt -> confirm; do not put confirm first or place multiple setup actions before the first confirm. The action after confirm defines what approval does: use webhook to call an external API, or use prompt to send another message in the same session. ' +
+        'Do not put shell/API command text inside a prompt when the desired follow-up is a webhook action. ' +
         'Read ~/.craft-agent/docs/automations.md for full format reference. ' +
         'After editing, confirm clearly what changed.',
     },

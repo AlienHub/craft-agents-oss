@@ -169,6 +169,139 @@ describe('PromptHandler', () => {
 
       handler.dispose();
     });
+
+    it('should attach confirm actions to the preceding prompt as a post-run gate', async () => {
+      const onPromptsReady = jest.fn();
+      const configProvider = createMockConfigProvider({
+        LabelAdd: [{
+          matcher: 'daily-report',
+          actions: [
+            { type: 'prompt', prompt: 'Generate the daily report' },
+            {
+              type: 'confirm',
+              title: 'Review report',
+              bodyMarkdown: 'Send the daily report?',
+              confirmLabel: 'Send',
+            },
+            { type: 'webhook', url: 'https://example.com/report' },
+          ],
+        }],
+      });
+
+      const handler = new PromptHandler(createOptions({ onPromptsReady }), configProvider);
+      handler.subscribe(bus);
+
+      await bus.emit('LabelAdd', {
+        workspaceId: 'test-workspace',
+        timestamp: Date.now(),
+        label: 'daily-report',
+      });
+
+      expect(onPromptsReady).toHaveBeenCalledTimes(1);
+      const prompts: PendingPrompt[] = onPromptsReady.mock.calls[0]![0];
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0]).toMatchObject({
+        prompt: 'Generate the daily report',
+        confirmation: {
+          title: 'Review report',
+          bodyMarkdown: 'Send the daily report?',
+          confirmLabel: 'Send',
+        },
+        onConfirmActions: [
+          { type: 'webhook', url: 'https://example.com/report' },
+        ],
+      });
+
+      handler.dispose();
+    });
+
+    it('should keep a follow-up prompt after a confirm gate', async () => {
+      const onPromptsReady = jest.fn();
+      const configProvider = createMockConfigProvider({
+        LabelAdd: [{
+          matcher: 'daily-report',
+          actions: [
+            { type: 'prompt', prompt: 'Generate the daily report' },
+            { type: 'confirm', title: 'Review report' },
+            { type: 'prompt', prompt: 'Post a concise follow-up in this session' },
+          ],
+        }],
+      });
+
+      const handler = new PromptHandler(createOptions({ onPromptsReady }), configProvider);
+      handler.subscribe(bus);
+
+      await bus.emit('LabelAdd', {
+        workspaceId: 'test-workspace',
+        timestamp: Date.now(),
+        label: 'daily-report',
+      });
+
+      const prompts: PendingPrompt[] = onPromptsReady.mock.calls[0]![0];
+      expect(prompts[0]).toMatchObject({
+        prompt: 'Generate the daily report',
+        confirmation: { title: 'Review report' },
+        onConfirmActions: [
+          { type: 'prompt', prompt: 'Post a concise follow-up in this session' },
+        ],
+      });
+
+      handler.dispose();
+    });
+
+    it('should ignore unsupported confirm-first workflows instead of creating a standalone gate', async () => {
+      const onPromptsReady = jest.fn();
+      const configProvider = createMockConfigProvider({
+        LabelAdd: [{
+          matcher: 'daily-report',
+          actions: [
+            { type: 'confirm', title: 'Review report' },
+            { type: 'webhook', url: 'https://example.com/report' },
+          ],
+        }],
+      });
+
+      const handler = new PromptHandler(createOptions({ onPromptsReady }), configProvider);
+      handler.subscribe(bus);
+
+      await bus.emit('LabelAdd', {
+        workspaceId: 'test-workspace',
+        timestamp: Date.now(),
+        label: 'daily-report',
+      });
+
+      expect(onPromptsReady).not.toHaveBeenCalled();
+
+      handler.dispose();
+    });
+
+    it('should ignore workflows with multiple actions before the first confirm', async () => {
+      const onPromptsReady = jest.fn();
+      const configProvider = createMockConfigProvider({
+        LabelAdd: [{
+          matcher: 'daily-report',
+          actions: [
+            { type: 'prompt', prompt: 'Collect source data' },
+            { type: 'prompt', prompt: 'Generate the daily report' },
+            { type: 'confirm', title: 'Review report' },
+            { type: 'webhook', url: 'https://example.com/report' },
+          ],
+        }],
+      });
+
+      const handler = new PromptHandler(createOptions({ onPromptsReady }), configProvider);
+      handler.subscribe(bus);
+
+      await bus.emit('LabelAdd', {
+        workspaceId: 'test-workspace',
+        timestamp: Date.now(),
+        label: 'daily-report',
+      });
+
+      expect(onPromptsReady).not.toHaveBeenCalled();
+
+      handler.dispose();
+    });
   });
 
   describe('agent events are ignored', () => {

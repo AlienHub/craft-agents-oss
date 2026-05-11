@@ -146,6 +146,39 @@ function runMatcherSemanticValidations(
 
       // Warn about webhook URLs with $VAR templates (can't validate until runtime)
       if (matcher.actions) {
+        const firstConfirmIndex = matcher.actions.findIndex(action => action.type === 'confirm');
+        if (firstConfirmIndex >= 0) {
+          if (firstConfirmIndex === 0) {
+            errors.push({
+              file,
+              path: `automations.${event}[${i}].actions[${firstConfirmIndex}]`,
+              message: 'Confirm actions must follow a prompt action in approval workflows',
+              severity: 'error',
+              suggestion: 'Use action order: prompt -> confirm -> follow-up actions',
+            });
+          } else if (firstConfirmIndex !== 1 || matcher.actions[0]?.type !== 'prompt') {
+            errors.push({
+              file,
+              path: `automations.${event}[${i}].actions[${firstConfirmIndex}]`,
+              message: 'Approval workflows currently support exactly one prompt before the first confirm action',
+              severity: 'error',
+              suggestion: 'Use action order: prompt -> confirm -> follow-up actions. Move extra setup into the first prompt or after confirmation.',
+            });
+          }
+
+          for (let j = 1; j < matcher.actions.length; j++) {
+            if (matcher.actions[j]?.type === 'confirm' && matcher.actions[j - 1]?.type !== 'prompt') {
+              errors.push({
+                file,
+                path: `automations.${event}[${i}].actions[${j}]`,
+                message: 'Follow-up confirm actions must immediately follow a prompt action',
+                severity: 'error',
+                suggestion: 'Insert a prompt action before this confirm, or remove the extra confirmation gate.',
+              });
+            }
+          }
+        }
+
         for (let j = 0; j < matcher.actions.length; j++) {
           const action = matcher.actions[j];
           if (action && typeof action === 'object' && 'type' in action && action.type === 'webhook' && 'url' in action && typeof action.url === 'string' && action.url.includes('$')) {

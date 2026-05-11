@@ -93,7 +93,7 @@ import { listLabels, loadLabelConfig } from '@craft-agent/shared/labels/storage'
 import { extractLabelId, resolveSessionLabels } from '@craft-agent/shared/labels'
 import { ensureLabelsExist } from '@craft-agent/shared/labels/crud'
 import { loadStatusConfig } from '@craft-agent/shared/statuses/storage'
-import { AutomationSystem, createPromptHistoryEntry, appendAutomationHistoryEntry, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
+import { AutomationSystem, createPromptHistoryEntry, createWebhookHistoryEntry, executeWithRetry, appendAutomationHistoryEntry, parsePromptReferences, expandEnvVars, type AutomationAction, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
 import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput } from './runtime-config'
 
 // Import from server-core domain utilities
@@ -995,6 +995,9 @@ export class SessionManager implements ISessionManager {
   private configWatchers: Map<string, ConfigWatcher> = new Map()
   // Automation systems for workspace event automations - one per workspace (includes scheduler, diffing, and handlers)
   private automationSystems: Map<string, AutomationSystem> = new Map()
+  // One in-flight automation run per matcher. Keeps prompt -> confirm -> follow-up actions serial
+  // and prevents frequent schedules from opening duplicate sessions while approval is pending.
+  private activeAutomationRuns: Map<string, string> = new Map()
   // Pending credential request resolvers (keyed by requestId)
   private pendingCredentialResolvers: Map<string, (response: import('@craft-agent/shared/protocol').CredentialResponse) => void> = new Map()
   // Permission request metadata tracking (keyed by requestId)
@@ -1034,6 +1037,15 @@ export class SessionManager implements ISessionManager {
   private agentRefreshLocks: Map<string, Promise<void>> = new Map()
   /** Monotonic clock to ensure strictly increasing message timestamps */
   private lastTimestamp = 0
+
+  private getAutomationRunKey(workspaceRootPath: string, matcherId?: string): string | undefined {
+    return matcherId ? `${workspaceRootPath}:${matcherId}` : undefined
+  }
+
+  private releaseAutomationRun(workspaceRootPath: string, matcherId?: string): void {
+    const runKey = this.getAutomationRunKey(workspaceRootPath, matcherId)
+    if (runKey) this.activeAutomationRuns.delete(runKey)
+  }
 
   /**
    * Optional binder installed by the messaging-gateway bootstrap. When set,
@@ -1371,10 +1383,20 @@ export class SessionManager implements ISessionManager {
         workspaceId,
         enableScheduler: true,
         onPromptsReady: async (prompts) => {
-          // Execute prompt automations by creating new sessions
-          const settled = await Promise.allSettled(
-            prompts.map((pending) =>
-              this.executePromptAutomation({
+          // Execute prompt automations serially per matcher. Approval-gated runs keep
+          // their matcher lock until the user confirms or cancels.
+          for (const [idx, pending] of prompts.entries()) {
+            const runKey = this.getAutomationRunKey(workspaceRootPath, pending.matcherId)
+            if (runKey && this.activeAutomationRuns.has(runKey)) {
+              sessionLog.info(`[Automations] Skipping matcher ${pending.matcherId}; previous run is still active`)
+              continue
+            }
+
+            if (runKey) this.activeAutomationRuns.set(runKey, 'starting')
+
+            let shouldReleaseRun = !pending.confirmation
+            try {
+              const result = await this.executePromptAutomation({
                 workspaceId,
                 workspaceRootPath,
                 prompt: pending.prompt,
@@ -1387,28 +1409,58 @@ export class SessionManager implements ISessionManager {
                 automationName: pending.automationName,
                 telegramTopic: pending.telegramTopic,
               })
-            )
-          )
 
-          // Write enriched history entries (with session IDs and prompt summaries)
-          for (const [idx, result] of settled.entries()) {
-            const pending = prompts[idx]
-            if (!pending.matcherId) continue
+              if (runKey) this.activeAutomationRuns.set(runKey, result.sessionId)
 
-            const entry = createPromptHistoryEntry({
-              matcherId: pending.matcherId,
-              ok: result.status === 'fulfilled',
-              sessionId: result.status === 'fulfilled' ? result.value.sessionId : undefined,
-              prompt: pending.prompt,
-              error: result.status === 'rejected' ? String(result.reason) : undefined,
-            })
+              if (pending.matcherId) {
+                const entry = createPromptHistoryEntry({
+                  matcherId: pending.matcherId,
+                  ok: true,
+                  sessionId: result.sessionId,
+                  prompt: pending.prompt,
+                })
+                appendAutomationHistoryEntry(workspaceRootPath, entry).catch(e => sessionLog.warn('[Automations] Failed to write history:', e))
+              }
 
-            appendAutomationHistoryEntry(workspaceRootPath, entry).catch(e => sessionLog.warn('[Automations] Failed to write history:', e))
-
-            if (result.status === 'rejected') {
-              sessionLog.error(`[Automations] Failed to execute prompt action ${idx + 1}:`, result.reason)
-            } else {
-              sessionLog.info(`[Automations] Created session ${result.value.sessionId} from prompt action`)
+              sessionLog.info(`[Automations] Created session ${result.sessionId} from prompt action`)
+              if (pending.confirmation) {
+                const continuationEnv = {
+                  ...(pending.continuationEnv ?? {}),
+                  AUTOMATION_OUTPUT: result.finalText ?? '',
+                  CRAFT_AUTOMATION_OUTPUT: result.finalText ?? '',
+                  CRAFT_AUTOMATION_SESSION_ID: result.sessionId,
+                }
+                const configuredBody = pending.confirmation.bodyMarkdown ?? pending.confirmation.bodyHtml
+                await this.addAutomationConfirmationToSession({
+                  sessionId: result.sessionId,
+                  matcherId: pending.matcherId,
+                  title: expandEnvVars(pending.confirmation.title, continuationEnv),
+                  body: configuredBody ? expandEnvVars(configuredBody, continuationEnv) : '',
+                  bodyFormat: pending.confirmation.bodyMarkdown || !pending.confirmation.bodyHtml ? 'markdown' : 'html',
+                  confirmLabel: pending.confirmation.confirmLabel,
+                  cancelLabel: pending.confirmation.cancelLabel,
+                  onConfirmPrompt: pending.confirmation.onConfirmPrompt,
+                  onCancelPrompt: pending.confirmation.onCancelPrompt,
+                  onConfirmActions: pending.onConfirmActions,
+                  continuationEnv,
+                })
+                shouldReleaseRun = false
+              }
+            } catch (reason) {
+              if (pending.matcherId) {
+                const entry = createPromptHistoryEntry({
+                  matcherId: pending.matcherId,
+                  ok: false,
+                  prompt: pending.prompt,
+                  error: String(reason),
+                })
+                appendAutomationHistoryEntry(workspaceRootPath, entry).catch(e => sessionLog.warn('[Automations] Failed to write history:', e))
+              }
+              sessionLog.error(`[Automations] Failed to execute prompt action ${idx + 1}:`, reason)
+            } finally {
+              if (shouldReleaseRun && runKey) {
+                this.activeAutomationRuns.delete(runKey)
+              }
             }
           }
         },
@@ -7163,7 +7215,7 @@ export class SessionManager implements ISessionManager {
    */
   async executePromptAutomation(
     input: ExecutePromptAutomationInput,
-  ): Promise<{ sessionId: string }> {
+  ): Promise<{ sessionId: string; finalText?: string }> {
     const {
       workspaceId,
       workspaceRootPath,
@@ -7247,7 +7299,216 @@ export class SessionManager implements ISessionManager {
       skillSlugs: resolved?.skillSlugs,
     })
 
-    return { sessionId: session.id }
+    const finalText = managed?.messages
+      .filter(m => m.role === 'assistant' && !m.isIntermediate)
+      .at(-1)?.content
+
+    return { sessionId: session.id, finalText }
+  }
+
+  async addAutomationConfirmationToSession(input: {
+    sessionId: string
+    matcherId?: string
+    title: string
+    body: string
+    bodyFormat: 'markdown' | 'html'
+    confirmLabel?: string
+    cancelLabel?: string
+    onConfirmPrompt?: string
+    onCancelPrompt?: string
+    onConfirmActions?: AutomationAction[]
+    continuationEnv?: Record<string, string>
+  }): Promise<{ messageId: string }> {
+    const managed = this.sessions.get(input.sessionId)
+    if (!managed) throw new Error(`Automation confirmation session ${input.sessionId} not found`)
+    await this.ensureMessagesLoaded(managed)
+
+    const message: Message = {
+      id: generateMessageId(),
+      role: 'automation-confirmation',
+      content: input.title,
+      timestamp: this.monotonic(),
+      automationConfirmationId: randomUUID(),
+      automationConfirmationTitle: input.title,
+      automationConfirmationBody: input.body,
+      automationConfirmationBodyFormat: input.bodyFormat,
+      automationConfirmationConfirmLabel: input.confirmLabel || 'Confirm',
+      automationConfirmationCancelLabel: input.cancelLabel || 'Cancel',
+      automationConfirmationStatus: 'pending',
+      automationConfirmationOnConfirmPrompt: input.onConfirmPrompt,
+      automationConfirmationOnCancelPrompt: input.onCancelPrompt,
+      automationConfirmationOnConfirmActions: input.onConfirmActions,
+      automationConfirmationContinuationEnv: input.continuationEnv,
+      automationConfirmationMatcherId: input.matcherId,
+    }
+
+    managed.messages.push(message)
+    this.persistSession(managed)
+    await this.flushSession(managed.id)
+
+    this.sendEvent({
+      type: 'automation_confirmation_requested',
+      sessionId: managed.id,
+      message,
+    }, managed.workspace.id)
+
+    return { messageId: message.id }
+  }
+
+  async respondToAutomationConfirmation(
+    sessionId: string,
+    messageId: string,
+    confirmed: boolean,
+  ): Promise<void> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) throw new Error('Session not found')
+
+    await this.ensureMessagesLoaded(managed)
+
+    const message = managed.messages.find(m => m.id === messageId)
+    if (!message || message.role !== 'automation-confirmation') {
+      throw new Error('Automation confirmation not found')
+    }
+    if (message.automationConfirmationStatus !== 'pending') {
+      return
+    }
+
+    const respondedAt = Date.now()
+    message.automationConfirmationStatus = confirmed ? 'confirmed' : 'cancelled'
+    message.automationConfirmationRespondedAt = respondedAt
+    this.persistSession(managed)
+
+    this.sendEvent({
+      type: 'automation_confirmation_updated',
+      sessionId,
+      messageId,
+      status: confirmed ? 'confirmed' : 'cancelled',
+      respondedAt,
+    }, managed.workspace.id)
+
+    const prompt = confirmed
+      ? message.automationConfirmationOnConfirmPrompt
+      : message.automationConfirmationOnCancelPrompt
+
+    if (confirmed && message.automationConfirmationOnConfirmActions?.length) {
+      let waitingForConfirmation = false
+      try {
+        waitingForConfirmation = await this.executeAutomationContinuationActions(
+          managed,
+          message,
+          message.automationConfirmationOnConfirmActions as AutomationAction[],
+        )
+      } finally {
+        if (!waitingForConfirmation) {
+          this.releaseAutomationRun(managed.workspace.rootPath, message.automationConfirmationMatcherId)
+        }
+      }
+      return
+    }
+
+    if (!prompt?.trim()) {
+      this.releaseAutomationRun(managed.workspace.rootPath, message.automationConfirmationMatcherId)
+      return
+    }
+
+    try {
+      const expandedPrompt = expandEnvVars(prompt, message.automationConfirmationContinuationEnv ?? {})
+      await this.sendAutomationPromptInSession(managed, expandedPrompt)
+    } finally {
+      this.releaseAutomationRun(managed.workspace.rootPath, message.automationConfirmationMatcherId)
+    }
+  }
+
+  private async sendAutomationPromptInSession(managed: ManagedSession, prompt: string): Promise<string> {
+    const mentions = parsePromptReferences(prompt).mentions
+    const resolved = this.resolveAutomationMentions(managed.workspace.rootPath, mentions)
+    if (resolved?.sourceSlugs.length) {
+      const existing = new Set(managed.enabledSourceSlugs || [])
+      for (const slug of resolved.sourceSlugs) existing.add(slug)
+      managed.enabledSourceSlugs = Array.from(existing)
+      this.persistSession(managed)
+      this.sendEvent({
+        type: 'sources_changed',
+        sessionId: managed.id,
+        enabledSourceSlugs: managed.enabledSourceSlugs,
+      }, managed.workspace.id)
+    }
+
+    await this.sendMessage(managed.id, prompt, undefined, undefined, {
+      skillSlugs: resolved?.skillSlugs,
+    })
+
+    await this.ensureMessagesLoaded(managed)
+    return managed.messages
+      .filter(m => m.role === 'assistant' && !m.isIntermediate)
+      .at(-1)?.content ?? ''
+  }
+
+  private async executeAutomationContinuationActions(
+    managed: ManagedSession,
+    message: Message,
+    actions: AutomationAction[],
+  ): Promise<boolean> {
+    let env: Record<string, string> = {
+      ...(message.automationConfirmationContinuationEnv ?? {}),
+      CRAFT_AUTOMATION_SESSION_ID: managed.id,
+    }
+    const matcherId = message.automationConfirmationMatcherId ?? 'unknown'
+
+    for (let actionIndex = 0; actionIndex < actions.length; actionIndex++) {
+      const action = actions[actionIndex]
+      if (action.type === 'webhook') {
+        const result = await executeWithRetry(action, { env, retry: { maxAttempts: 2 } })
+        const entry = createWebhookHistoryEntry({
+          matcherId,
+          ok: result.success,
+          method: action.method,
+          url: result.url,
+          statusCode: result.statusCode,
+          durationMs: result.durationMs ?? 0,
+          attempts: result.attempts,
+          error: result.error,
+          responseBody: result.responseBody,
+        })
+        appendAutomationHistoryEntry(managed.workspace.rootPath, entry)
+          .catch(e => sessionLog.warn('[Automations] Failed to write continuation webhook history:', e))
+        if (!result.success) {
+          sessionLog.warn(`[Automations] Continuation webhook failed: ${result.error ?? result.statusCode}`)
+        }
+        continue
+      }
+
+      if (action.type === 'prompt') {
+        const prompt = expandEnvVars(action.prompt, env)
+        const output = await this.sendAutomationPromptInSession(managed, prompt)
+        env = {
+          ...env,
+          AUTOMATION_OUTPUT: output,
+          CRAFT_AUTOMATION_OUTPUT: output,
+        }
+        continue
+      }
+
+      if (action.type === 'confirm') {
+        const configuredBody = action.bodyMarkdown ?? action.bodyHtml
+        const body = configuredBody ? expandEnvVars(configuredBody, env) : ''
+        await this.addAutomationConfirmationToSession({
+          sessionId: managed.id,
+          matcherId,
+          title: expandEnvVars(action.title, env),
+          body,
+          bodyFormat: action.bodyMarkdown || !action.bodyHtml ? 'markdown' : 'html',
+          confirmLabel: action.confirmLabel,
+          cancelLabel: action.cancelLabel,
+          onConfirmPrompt: action.onConfirmPrompt,
+          onCancelPrompt: action.onCancelPrompt,
+          onConfirmActions: actions.slice(actionIndex + 1),
+          continuationEnv: env,
+        })
+        return true
+      }
+    }
+    return false
   }
 
   /**

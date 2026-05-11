@@ -129,6 +129,44 @@ Send a prompt to Craft Agent (creates a new session for scheduled prompts).
 
 The `llmConnection` value is the slug of an LLM connection configured in AI Settings. The `model` value is a model ID supported by the provider. If either is invalid or not found, it gracefully falls back to the workspace default. Both can be used independently or together.
 
+### Confirmation Actions
+
+Use a `confirm` action as an approval gate **inside** an automation workflow. The supported MVP pattern is:
+
+1. A `prompt` action creates a session and the agent produces a report or draft.
+2. A following `confirm` action displays a confirmation card in that same session.
+3. If the user confirms, the actions after `confirm` run.
+4. If the user cancels, the remaining actions are skipped.
+
+```json
+{
+  "type": "confirm",
+  "title": "Send report?",
+  "confirmLabel": "Send",
+  "cancelLabel": "Skip"
+}
+```
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `type` | `"confirm"` | Required | Action type |
+| `title` | string | Required | Confirmation card title |
+| `bodyMarkdown` | string | - | Optional markdown body shown in the card |
+| `bodyHtml` | string | - | HTML body shown in the card |
+| `confirmLabel` | string | `"Confirm"` | Confirm button label |
+| `cancelLabel` | string | `"Cancel"` | Cancel button label |
+| `onConfirmPrompt` | string | - | Optional prompt to send in the same session after confirmation |
+| `onCancelPrompt` | string | - | Optional prompt to send in the same session after cancellation |
+
+When `confirm` follows a `prompt`, omit `bodyMarkdown` for a compact approval card. The agent's final output remains visible above the card in the same session, and subsequent actions can reference that output with `$CRAFT_AUTOMATION_OUTPUT`.
+
+The action after `confirm` decides what happens when the user approves:
+
+- Use `webhook` after `confirm` to call an external API or notification endpoint.
+- Use another `prompt` after `confirm` to send a follow-up message in the same session.
+
+> **Important:** The first approval gate must be exactly `prompt` → `confirm`. Do not put `confirm` before the `prompt`, and do not place multiple setup actions before the first `confirm`; current validation rejects those shapes because they would be ambiguous. Do not encode shell commands or API calls inside a `prompt` when the desired follow-up is a `webhook`.
+
 ### Webhook Actions
 
 Send an HTTP request to an external endpoint when an event fires. Useful for notifications (Slack, Discord), logging to external services, or triggering external workflows.
@@ -236,6 +274,16 @@ These are automatically set by the automation system based on the triggering eve
 | `FlagChange` | `$CRAFT_IS_FLAGGED` | `true` or `false` |
 | `SessionStatusChange` | `$CRAFT_OLD_STATE`, `$CRAFT_NEW_STATE` | Previous and new status |
 | `SchedulerTick` | `$CRAFT_LOCAL_TIME`, `$CRAFT_LOCAL_DATE` | Current time (`14:30`) and date (`2026-03-09`) |
+
+### Workflow Variables
+
+These variables are available to actions that run after a `prompt` → `confirm` approval gate:
+
+| Variable | Description | Available For |
+|----------|-------------|---------------|
+| `$CRAFT_AUTOMATION_OUTPUT` | Final assistant output from the prompt before the confirmation card | Actions after `confirm` |
+| `$AUTOMATION_OUTPUT` | Alias for `$CRAFT_AUTOMATION_OUTPUT` | Actions after `confirm` |
+| `$CRAFT_AUTOMATION_SESSION_ID` | Session ID created by the prompt action | Actions after `confirm` |
 
 ### User-Defined Webhook Secrets (CRAFT_WH_*)
 
@@ -571,6 +619,88 @@ Use a `time` condition to restrict a daily schedule to weekdays only:
   }
 }
 ```
+
+### Scheduled Report with Approval Before Sending to an API
+
+Use this pattern when the agent should research or draft something first, then ask the user before sending it to an API or webhook:
+
+```json
+{
+  "version": 2,
+  "automations": {
+    "SchedulerTick": [
+      {
+        "name": "AI stock report approval",
+        "cron": "0 9 * * 1-5",
+        "timezone": "Asia/Shanghai",
+        "labels": ["Scheduled", "stock-report"],
+        "actions": [
+          {
+            "type": "prompt",
+            "prompt": "Research the latest AI company stock movements and produce a concise report. Include NVIDIA, AMD, Broadcom, Qualcomm, Intel, Salesforce, Microsoft, and Google."
+          },
+          {
+            "type": "confirm",
+            "title": "Send AI stock report?",
+            "confirmLabel": "Send",
+            "cancelLabel": "Skip"
+          },
+          {
+            "type": "webhook",
+            "url": "${CRAFT_WH_REPORT_URL}",
+            "method": "POST",
+            "bodyFormat": "json",
+            "body": {
+              "report": "$CRAFT_AUTOMATION_OUTPUT",
+              "sessionId": "$CRAFT_AUTOMATION_SESSION_ID"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+In this workflow, the confirmation card appears **after** the report is generated. Confirming sends the report to the webhook; skipping stops before the webhook.
+
+### Scheduled Report with Approval Before Continuing the Session
+
+Use this pattern when approval should continue the same conversation instead of calling an external API. The third action is another `prompt`, so confirming sends that prompt into the current session.
+
+```json
+{
+  "version": 2,
+  "automations": {
+    "SchedulerTick": [
+      {
+        "name": "Weather report with travel advice",
+        "cron": "0 8 * * *",
+        "timezone": "Asia/Shanghai",
+        "labels": ["Scheduled", "weather"],
+        "actions": [
+          {
+            "type": "prompt",
+            "prompt": "Get the current weather and write a concise report in Chinese."
+          },
+          {
+            "type": "confirm",
+            "title": "Generate travel advice?",
+            "confirmLabel": "Continue",
+            "cancelLabel": "Skip"
+          },
+          {
+            "type": "prompt",
+            "prompt": "Based on the weather report above, provide practical travel and clothing advice in Chinese."
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+In this workflow, confirming does **not** call a webhook. It sends the third `prompt` into the same session and the agent continues from the report above.
 
 ### Permission Mode Gate (with Conditions)
 

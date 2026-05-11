@@ -106,6 +106,8 @@
   "automations.testFailed": "Test fehlgeschlagen",
   "automations.testPassed": "Test bestanden",
   "automations.testRunning": "Test wird ausgeführt...",
+  "automations.testWaitingForConfirmation": "Wartet auf Bestätigung",
+  "automations.testWaitingForConfirmationDescription": "Der Prompt ist abgeschlossen und eine Bestätigungskarte wurde derselben Sitzung hinzugefügt. Bestätige sie, um die restlichen Aktionen fortzusetzen.",
   "automations.webhookAttempts": "Versuche",
   "automations.webhookDuration": "Dauer",
   "automations.webhookError": "Fehler",

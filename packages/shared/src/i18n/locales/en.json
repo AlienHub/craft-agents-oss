@@ -106,6 +106,8 @@
   "automations.testFailed": "Test Failed",
   "automations.testPassed": "Test Passed",
   "automations.testRunning": "Running test...",
+  "automations.testWaitingForConfirmation": "Waiting for confirmation",
+  "automations.testWaitingForConfirmationDescription": "The prompt finished and a confirmation card was added to the session. Approve it to continue the remaining actions.",
   "automations.webhookAttempts": "Attempts",
   "automations.webhookDuration": "Duration",
   "automations.webhookError": "Error",

@@ -46,6 +46,8 @@ import {
   handleSessionUnshared,
   handleAuthRequest,
   handleAuthCompleted,
+  handleAutomationConfirmationRequested,
+  handleAutomationConfirmationUpdated,
   handleUsageUpdate,
 } from './handlers/session'
 
@@ -200,6 +202,12 @@ export function processEvent(
 
     case 'auth_completed':
       return handleAuthCompleted(state, event)
+
+    case 'automation_confirmation_requested':
+      return handleAutomationConfirmationRequested(state, event)
+
+    case 'automation_confirmation_updated':
+      return handleAutomationConfirmationUpdated(state, event)
 
     case 'source_activated':
       // Source was auto-activated mid-turn, emit effect to auto-retry
