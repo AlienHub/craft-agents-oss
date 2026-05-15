@@ -4,13 +4,14 @@ import {
   CodePreviewOverlay,
   GenericOverlay,
   ImagePreviewOverlay,
+  MarkdownActionBar,
   JSONPreviewOverlay,
   Markdown,
   PDFPreviewOverlay,
   Spinner,
   classifyFile,
 } from '@craft-agent/ui'
-import { AlertCircle, ChevronDown, Copy, ExternalLink, FolderOpen, Globe } from 'lucide-react'
+import { AlertCircle, ChevronDown, Copy, ExternalLink, FileText, FolderOpen, Globe } from 'lucide-react'
 import { useNavigationState, isSessionsNavigation } from '@/contexts/NavigationContext'
 import { routes } from '@/lib/navigate'
 import { navigate } from '@/lib/navigate'
@@ -34,6 +35,7 @@ import { toast } from 'sonner'
 import { getFileManagerName } from '@/lib/platform'
 import type { SessionResourceDetails } from '../../shared/types'
 import { cn } from '@/lib/utils'
+import { stripMarkdown } from '../utils/text'
 
 interface SessionResourcePreviewPageProps {
   resourceDetails: SessionResourceDetails
@@ -168,6 +170,7 @@ export default function SessionResourcePreviewPage({
   const [jsonData, setJsonData] = React.useState<unknown>(null)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [isLoading, setIsLoading] = React.useState(false)
+  const [copiedText, setCopiedText] = React.useState(false)
   const resourceKind = resourceDetails.resource.kind
   const resourceTarget = resourceDetails.resource.target
 
@@ -302,6 +305,24 @@ export default function SessionResourcePreviewPage({
     await window.electronAPI.showInFolder(resource.target)
   }, [resource])
 
+  const showCopiedState = React.useCallback(() => {
+    setCopiedText(true)
+    window.setTimeout(() => {
+      setCopiedText(false)
+    }, 2000)
+  }, [])
+
+  const handleCopyPlainText = React.useCallback(async () => {
+    await navigator.clipboard.writeText(stripMarkdown(textContent ?? ''))
+    showCopiedState()
+    toast.success(t('toast.copied'))
+  }, [showCopiedState, t, textContent])
+
+  const handleCopyMarkdown = React.useCallback(async () => {
+    await navigator.clipboard.writeText(textContent ?? '')
+    toast.success(t('toast.copied'))
+  }, [t, textContent])
+
   const headerActions = (
     <PanelHeaderCenterButton
       icon={resource.kind === 'url' ? <Globe className="h-4 w-4" /> : <ExternalLink className="h-4 w-4" />}
@@ -368,7 +389,7 @@ export default function SessionResourcePreviewPage({
 
   if (resource.kind === 'url') {
     return (
-      <div className="h-full flex flex-col min-h-0 bg-background">
+      <div className="h-full flex flex-col min-h-0">
         <PanelHeader
           title={getUrlTitle(resource.target)}
           titleMenu={!isCompactMode ? desktopTitleMenu : undefined}
@@ -394,7 +415,7 @@ export default function SessionResourcePreviewPage({
 
   if (!classification?.canPreview || !classification.type) {
     return (
-      <div className="h-full flex flex-col min-h-0 bg-background">
+      <div className="h-full flex flex-col min-h-0">
         <PanelHeader
           title={fileTitle}
           titleMenu={!isCompactMode ? desktopTitleMenu : undefined}
@@ -501,19 +522,32 @@ export default function SessionResourcePreviewPage({
         >
           <ScrollArea className="h-full min-w-0">
             <div className="mx-auto min-h-full w-full max-w-[1080px] px-6 py-4">
-              <div className="mx-auto w-full max-w-[960px] rounded-[16px] bg-background px-10 py-8 shadow-strong">
+              <div className="mx-auto w-full max-w-[960px]">
                 {loadError ? (
-                  <div className="text-sm text-destructive">{loadError}</div>
+                  <div className="rounded-[16px] bg-background px-10 py-8 text-sm text-destructive shadow-strong">
+                    {loadError}
+                  </div>
                 ) : (
-                  <div className="text-sm">
-                    <Markdown
-                      mode="minimal"
-                      onFileClick={handleNestedFileClick}
-                      onUrlClick={handleNestedUrlClick}
-                      hideFirstMermaidExpand={false}
-                    >
-                      {textContent ?? ''}
-                    </Markdown>
+                  <div className="overflow-hidden rounded-[16px] bg-background shadow-strong">
+                    <div className="px-10 py-8">
+                      <Markdown
+                        mode="minimal"
+                        onFileClick={handleNestedFileClick}
+                        onUrlClick={handleNestedUrlClick}
+                        hideFirstMermaidExpand={false}
+                      >
+                        {textContent ?? ''}
+                      </Markdown>
+                    </div>
+                    <MarkdownActionBar
+                      onCopy={() => { void handleCopyPlainText() }}
+                      copied={copiedText}
+                      secondaryAction={{
+                        icon: <FileText className="h-4 w-4" />,
+                        label: <span>{t('common.copy')} Markdown</span>,
+                        onClick: () => { void handleCopyMarkdown() },
+                      }}
+                    />
                   </div>
                 )}
               </div>
@@ -525,7 +559,7 @@ export default function SessionResourcePreviewPage({
   })()
 
   return (
-    <div className="group h-full flex flex-col min-h-0 bg-background">
+    <div className="group h-full flex flex-col min-h-0">
       <PanelHeader
         title={fileTitle}
         titleMenu={!isCompactMode ? desktopTitleMenu : undefined}
