@@ -10,19 +10,30 @@ import {
   Spinner,
   classifyFile,
 } from '@craft-agent/ui'
-import { AlertCircle, Copy, ExternalLink, FolderOpen, Globe } from 'lucide-react'
+import { AlertCircle, ChevronDown, Copy, ExternalLink, FolderOpen, Globe } from 'lucide-react'
 import { useNavigationState, isSessionsNavigation } from '@/contexts/NavigationContext'
 import { routes } from '@/lib/navigate'
 import { navigate } from '@/lib/navigate'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from '@/components/ui/drawer'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { normalizeLocalFileTarget } from '@/lib/file-link-target'
-import { StyledDropdownMenuItem } from '@/components/ui/styled-dropdown'
+import {
+  StyledDropdownMenuItem,
+  StyledDropdownMenuSeparator,
+} from '@/components/ui/styled-dropdown'
 import { toast } from 'sonner'
 import { getFileManagerName } from '@/lib/platform'
 import type { SessionResourceDetails } from '../../shared/types'
+import { cn } from '@/lib/utils'
 
 interface SessionResourcePreviewPageProps {
   resourceDetails: SessionResourceDetails
@@ -69,11 +80,85 @@ function getUrlDisplay(target: string): string {
   }
 }
 
+interface CompactResourceMenuProps {
+  title: string
+  children: (close: () => void) => React.ReactNode
+}
+
+interface CompactResourceMenuItemProps {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void | Promise<void>
+  destructive?: boolean
+}
+
+function CompactResourceMenuItem({
+  icon,
+  label,
+  onClick,
+  destructive = false,
+}: CompactResourceMenuItemProps) {
+  return (
+    <button
+      type="button"
+      onClick={() => { void onClick() }}
+      className={cn(
+        'flex w-full items-center gap-3 px-4 py-3 text-left text-sm transition-colors',
+        destructive
+          ? 'text-destructive hover:bg-destructive/5'
+          : 'text-foreground hover:bg-foreground/[0.03]',
+      )}
+    >
+      <span className="shrink-0">{icon}</span>
+      <span className="flex-1">{label}</span>
+    </button>
+  )
+}
+
+function CompactResourceMenu({ title, children }: CompactResourceMenuProps) {
+  const [open, setOpen] = React.useState(false)
+  const close = React.useCallback(() => setOpen(false), [])
+
+  return (
+    <Drawer open={open} onOpenChange={setOpen}>
+      <DrawerTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            'flex items-center gap-1 px-2 py-1 rounded-md titlebar-no-drag min-w-0',
+            'hover:bg-foreground/[0.03] transition-colors',
+            'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+            'data-[state=open]:bg-foreground/[0.03]',
+          )}
+          aria-label={title}
+        >
+          <div className="flex items-center gap-1 min-w-0">
+            <h1 className="text-sm font-semibold truncate font-sans leading-tight">{title}</h1>
+          </div>
+          <span className="shrink-0 flex items-center justify-center">
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground translate-y-[1px]" />
+          </span>
+        </button>
+      </DrawerTrigger>
+      <DrawerContent>
+        <DrawerHeader>
+          <DrawerTitle>{title}</DrawerTitle>
+        </DrawerHeader>
+        <div className="px-3 pb-4">
+          <div className="overflow-hidden rounded-[12px] border border-border/40 bg-background shadow-minimal">
+            {children(close)}
+          </div>
+        </div>
+      </DrawerContent>
+    </Drawer>
+  )
+}
+
 export default function SessionResourcePreviewPage({
   resourceDetails,
 }: SessionResourcePreviewPageProps) {
   const { t } = useTranslation()
-  const { rightSidebarButton, leadingAction, onOpenUrl } = useAppShellContext()
+  const { rightSidebarButton, leadingAction, onOpenUrl, isCompactMode } = useAppShellContext()
   const navigationState = useNavigationState()
   const sessionFilter = isSessionsNavigation(navigationState)
     ? navigationState.filter
@@ -191,10 +276,25 @@ export default function SessionResourcePreviewPage({
     void window.electronAPI.openUrl(resource.target)
   }, [resource])
 
+  const handleOpenInNewWindow = React.useCallback(async () => {
+    const route = routes.view.sessionResource({
+      sessionId: resourceDetails.sessionId,
+      resourceKind: resource.kind,
+      target: resource.target,
+      filter: sessionFilter,
+    })
+    const separator = route.includes('?') ? '&' : '?'
+    const url = `craftagents://${route}${separator}window=focused`
+    try {
+      await window.electronAPI.openUrl(url)
+    } catch (error) {
+      console.error('[SessionResourcePreviewPage] openUrl failed:', error)
+    }
+  }, [resource.kind, resource.target, resourceDetails.sessionId, sessionFilter])
+
   const handleCopyPath = React.useCallback(async () => {
-    if (resource.kind !== 'file') return
     await navigator.clipboard.writeText(resource.target)
-    toast.success(t('toast.pathCopied'))
+    toast.success(resource.kind === 'file' ? t('toast.pathCopied') : t('toast.linkCopied'))
   }, [resource, t])
 
   const handleShowInFinder = React.useCallback(async () => {
@@ -210,28 +310,69 @@ export default function SessionResourcePreviewPage({
     />
   )
 
-  const fileTitleMenu = resource.kind === 'file' ? (
+  const desktopTitleMenu = (
     <>
       <StyledDropdownMenuItem onClick={openExternally}>
         <ExternalLink className="h-3.5 w-3.5" />
         <span className="flex-1">{t('common.open')}</span>
       </StyledDropdownMenuItem>
-      <StyledDropdownMenuItem onClick={handleShowInFinder}>
-        <FolderOpen className="h-3.5 w-3.5" />
-        <span className="flex-1">{t('sessionMenu.showInFileManager', { fileManager: getFileManagerName() })}</span>
-      </StyledDropdownMenuItem>
+      {resource.kind === 'file' && (
+        <StyledDropdownMenuItem onClick={handleShowInFinder}>
+          <FolderOpen className="h-3.5 w-3.5" />
+          <span className="flex-1">{t('sessionMenu.showInFileManager', { fileManager: getFileManagerName() })}</span>
+        </StyledDropdownMenuItem>
+      )}
       <StyledDropdownMenuItem onClick={handleCopyPath}>
         <Copy className="h-3.5 w-3.5" />
-        <span className="flex-1">{t('sessionMenu.copyPath')}</span>
+        <span className="flex-1">{resource.kind === 'file' ? t('sessionMenu.copyPath') : t('sessionMenu.copyLink')}</span>
+      </StyledDropdownMenuItem>
+      <StyledDropdownMenuSeparator />
+      <StyledDropdownMenuItem onClick={handleOpenInNewWindow}>
+        <ExternalLink className="h-3.5 w-3.5" />
+        <span className="flex-1">{t('sessionMenu.openInNewWindow')}</span>
       </StyledDropdownMenuItem>
     </>
-  ) : undefined
+  )
+
+  const compactTitleMenu = (
+    <CompactResourceMenu title={resource.kind === 'file' ? getFileTitle(resource.target) : getUrlTitle(resource.target)}>
+      {(close) => (
+        <>
+          <CompactResourceMenuItem
+            icon={<ExternalLink className="h-4 w-4" />}
+            label={t('common.open')}
+            onClick={async () => { close(); openExternally() }}
+          />
+          {resource.kind === 'file' && (
+            <CompactResourceMenuItem
+              icon={<FolderOpen className="h-4 w-4" />}
+              label={t('sessionMenu.showInFileManager', { fileManager: getFileManagerName() })}
+              onClick={async () => { close(); await handleShowInFinder() }}
+            />
+          )}
+          <CompactResourceMenuItem
+            icon={<Copy className="h-4 w-4" />}
+            label={resource.kind === 'file' ? t('sessionMenu.copyPath') : t('sessionMenu.copyLink')}
+            onClick={async () => { close(); await handleCopyPath() }}
+          />
+          <div className="mx-4 h-px bg-border/50" />
+          <CompactResourceMenuItem
+            icon={<ExternalLink className="h-4 w-4" />}
+            label={t('sessionMenu.openInNewWindow')}
+            onClick={async () => { close(); await handleOpenInNewWindow() }}
+          />
+        </>
+      )}
+    </CompactResourceMenu>
+  )
 
   if (resource.kind === 'url') {
     return (
       <div className="h-full flex flex-col min-h-0 bg-background">
         <PanelHeader
           title={getUrlTitle(resource.target)}
+          titleMenu={!isCompactMode ? desktopTitleMenu : undefined}
+          compactTitleMenu={isCompactMode ? compactTitleMenu : undefined}
           actions={headerActions}
           leadingAction={leadingAction}
           rightSidebarButton={rightSidebarButton}
@@ -256,7 +397,8 @@ export default function SessionResourcePreviewPage({
       <div className="h-full flex flex-col min-h-0 bg-background">
         <PanelHeader
           title={fileTitle}
-          titleMenu={fileTitleMenu}
+          titleMenu={!isCompactMode ? desktopTitleMenu : undefined}
+          compactTitleMenu={isCompactMode ? compactTitleMenu : undefined}
           actions={headerActions}
           leadingAction={leadingAction}
           rightSidebarButton={rightSidebarButton}
@@ -386,7 +528,8 @@ export default function SessionResourcePreviewPage({
     <div className="group h-full flex flex-col min-h-0 bg-background">
       <PanelHeader
         title={fileTitle}
-        titleMenu={fileTitleMenu}
+        titleMenu={!isCompactMode ? desktopTitleMenu : undefined}
+        compactTitleMenu={isCompactMode ? compactTitleMenu : undefined}
         actions={headerActions}
         leadingAction={leadingAction}
         rightSidebarButton={rightSidebarButton}
