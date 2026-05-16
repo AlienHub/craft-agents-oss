@@ -13,7 +13,7 @@
  * when the stack becomes empty.
  */
 
-import { useCallback, useMemo } from 'react'
+import { memo, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSetAtom } from 'jotai'
 import { cn } from '@/lib/utils'
@@ -43,7 +43,7 @@ interface PanelSlotProps {
   isCompact?: boolean
 }
 
-export function PanelSlot({
+function PanelSlotInner({
   entry,
   isOnly,
   isFocusedPanel,
@@ -150,3 +150,19 @@ export function PanelSlot({
     </>
   )
 }
+
+export const PanelSlot = memo(PanelSlotInner, (prev, next) => {
+  return (
+    prev.entry.id === next.entry.id &&
+    prev.entry.route === next.entry.route &&
+    prev.entry.proportion === next.entry.proportion &&
+    prev.isOnly === next.isOnly &&
+    prev.isFocusedPanel === next.isFocusedPanel &&
+    prev.isSidebarAndNavigatorHidden === next.isSidebarAndNavigatorHidden &&
+    prev.isAtLeftEdge === next.isAtLeftEdge &&
+    prev.isAtRightEdge === next.isAtRightEdge &&
+    prev.proportion === next.proportion &&
+    prev.isCompact === next.isCompact &&
+    Boolean(prev.sash) === Boolean(next.sash)
+  )
+})
