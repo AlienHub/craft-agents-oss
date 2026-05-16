@@ -11,7 +11,7 @@ import {
   Spinner,
   classifyFile,
 } from '@craft-agent/ui'
-import { AlertCircle, ChevronDown, Copy, ExternalLink, FileText, FolderOpen, Globe } from 'lucide-react'
+import { AlertCircle, ChevronDown, Copy, ExternalLink, FileText, FolderOpen, Globe, Monitor } from 'lucide-react'
 import { useNavigationState, isSessionsNavigation } from '@/contexts/NavigationContext'
 import { routes } from '@/lib/navigate'
 import { navigate } from '@/lib/navigate'
@@ -36,6 +36,7 @@ import { getFileManagerName } from '@/lib/platform'
 import type { SessionResourceDetails } from '../../shared/types'
 import { cn } from '@/lib/utils'
 import { stripMarkdown } from '../utils/text'
+import { openInAppBrowser } from '@/lib/browser-pane'
 
 interface SessionResourcePreviewPageProps {
   resourceDetails: SessionResourceDetails
@@ -80,6 +81,49 @@ function getUrlDisplay(target: string): string {
   } catch {
     return target
   }
+}
+
+function injectHtmlPreviewBase(html: string, sourcePath: string): string {
+  const baseHref = getHtmlPreviewBaseHref(sourcePath)
+  if (!baseHref || /<base\s/i.test(html)) return html
+  if (/<head[^>]*>/i.test(html)) {
+    return html.replace(/(<head[^>]*>)/i, `$1<base href="${baseHref}">`)
+  }
+  if (/<html[^>]*>/i.test(html)) {
+    return html.replace(/(<html[^>]*>)/i, `$1<head><base href="${baseHref}"></head>`)
+  }
+  return `<head><base href="${baseHref}"></head>${html}`
+}
+
+function getHtmlPreviewBaseHref(sourcePath: string): string | null {
+  if (/^file:/i.test(sourcePath)) {
+    try {
+      const parsed = new URL(sourcePath)
+      parsed.search = ''
+      parsed.hash = ''
+      parsed.pathname = parsed.pathname.replace(/[^/]*$/, '')
+      return parsed.toString()
+    } catch {
+      return null
+    }
+  }
+
+  const normalized = sourcePath.replace(/\\/g, '/')
+  const slashIndex = normalized.lastIndexOf('/')
+  if (slashIndex === -1) return null
+
+  const directory = normalized.slice(0, slashIndex + 1)
+  const encoded = encodeURI(directory)
+
+  if (/^[A-Za-z]:\//.test(directory)) {
+    return `file:///${encoded}`
+  }
+
+  if (directory.startsWith('/')) {
+    return `file://${encoded}`
+  }
+
+  return null
 }
 
 interface CompactResourceMenuProps {
@@ -188,6 +232,7 @@ export default function SessionResourcePreviewPage({
   )
   const classificationType = classification?.type ?? null
   const canPreview = classification?.canPreview ?? false
+  const supportsLiveBrowser = resource.kind === 'url' || classificationType === 'html'
 
   const openResourcePanel = React.useCallback((kind: 'file' | 'url', target: string) => {
     navigate(routes.view.sessionResource({
@@ -226,7 +271,7 @@ export default function SessionResourcePreviewPage({
       return
     }
 
-    if (!['code', 'markdown', 'json', 'text'].includes(classificationType)) {
+    if (!['html', 'code', 'markdown', 'json', 'text'].includes(classificationType)) {
       setTextContent(null)
       setJsonData(null)
       setLoadError(null)
@@ -323,12 +368,33 @@ export default function SessionResourcePreviewPage({
     toast.success(t('toast.copied'))
   }, [t, textContent])
 
+  const handleOpenInAppBrowser = React.useCallback(async () => {
+    try {
+      await openInAppBrowser({
+        ...(resource.kind === 'url' ? { url: resource.target } : { filePath: resource.target }),
+        bindToSessionId: resourceDetails.sessionId,
+      })
+    } catch (error) {
+      console.error('[SessionResourcePreviewPage] openInAppBrowser failed:', error)
+      toast.error(t('toast.failedToCreateBrowser'))
+    }
+  }, [resource, resourceDetails.sessionId, t])
+
   const headerActions = (
-    <PanelHeaderCenterButton
-      icon={resource.kind === 'url' ? <Globe className="h-4 w-4" /> : <ExternalLink className="h-4 w-4" />}
-      onClick={openExternally}
-      tooltip={t('common.open')}
-    />
+    <>
+      {supportsLiveBrowser && (
+        <PanelHeaderCenterButton
+          icon={<Monitor className="h-4 w-4" />}
+          onClick={handleOpenInAppBrowser}
+          tooltip="Open Live Browser"
+        />
+      )}
+      <PanelHeaderCenterButton
+        icon={resource.kind === 'url' ? <Globe className="h-4 w-4" /> : <ExternalLink className="h-4 w-4" />}
+        onClick={openExternally}
+        tooltip={t('common.open')}
+      />
+    </>
   )
 
   const desktopTitleMenu = (
@@ -337,6 +403,12 @@ export default function SessionResourcePreviewPage({
         <ExternalLink className="h-3.5 w-3.5" />
         <span className="flex-1">{t('common.open')}</span>
       </StyledDropdownMenuItem>
+      {supportsLiveBrowser && (
+        <StyledDropdownMenuItem onClick={handleOpenInAppBrowser}>
+          <Monitor className="h-3.5 w-3.5" />
+          <span className="flex-1">Open Live Browser</span>
+        </StyledDropdownMenuItem>
+      )}
       {resource.kind === 'file' && (
         <StyledDropdownMenuItem onClick={handleShowInFinder}>
           <FolderOpen className="h-3.5 w-3.5" />
@@ -364,6 +436,13 @@ export default function SessionResourcePreviewPage({
             label={t('common.open')}
             onClick={async () => { close(); openExternally() }}
           />
+          {supportsLiveBrowser && (
+            <CompactResourceMenuItem
+              icon={<Monitor className="h-4 w-4" />}
+              label="Open Live Browser"
+              onClick={async () => { close(); await handleOpenInAppBrowser() }}
+            />
+          )}
           {resource.kind === 'file' && (
             <CompactResourceMenuItem
               icon={<FolderOpen className="h-4 w-4" />}
@@ -479,6 +558,29 @@ export default function SessionResourcePreviewPage({
           embedded
           hideHeader
         />
+      )
+    }
+
+    if (classification.type === 'html') {
+      if (loadError) {
+        return (
+          <div className="flex-1 flex items-center justify-center px-6 text-center text-destructive">
+            {loadError}
+          </div>
+        )
+      }
+
+      return (
+        <div className="h-full bg-foreground-3 p-4">
+          <div className="mx-auto h-full w-full max-w-[1280px] overflow-hidden rounded-[16px] bg-white shadow-strong">
+            <iframe
+              srcDoc={injectHtmlPreviewBase(textContent ?? '', resource.target)}
+              title={fileTitle}
+              className="h-full w-full border-0"
+              sandbox="allow-same-origin allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox"
+            />
+          </div>
+        </div>
       )
     }
 
