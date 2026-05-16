@@ -21,11 +21,13 @@ import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu
 import { StyledDropdownMenuContent, StyledDropdownMenuItem, StyledDropdownMenuSeparator } from '@/components/ui/styled-dropdown'
 import { useAppShellContext, usePendingPermission, usePendingCredential, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
 import { rendererPerf } from '@/lib/perf'
-import { routes } from '@/lib/navigate'
+import { navigate, routes } from '@/lib/navigate'
 import { coerceInputText } from '@/lib/input-text'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
+import { normalizeLocalFileTarget } from '@/lib/file-link-target'
 import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, loadedSessionsAtom, sessionMetaMapAtom } from '@/atoms/sessions'
 import { getSessionTitle } from '@/utils/session'
+import { useNavigationState, isSessionsNavigation } from '@/contexts/NavigationContext'
 // Model resolution: connection.defaultModel (no hardcoded defaults)
 import { resolveEffectiveConnectionSlug, isSessionConnectionUnavailable } from '@config/llm-connections'
 
@@ -45,7 +47,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     llmConnections,
     workspaceDefaultLlmConnection,
     onSendMessage,
-    onOpenFile,
     onOpenUrl,
     workspaces,
     onRespondToPermission,
@@ -80,6 +81,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onChatMatchInfoChange,
     isFocusedPanel,
   } = useAppShellContext()
+  const navigationState = useNavigationState()
 
   // Use the unified session options hook for clean access
   const {
@@ -331,16 +333,18 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
   const handleOpenFile = React.useCallback(
     async (path: string) => {
+      const normalizedPath = normalizeLocalFileTarget(path)
+
       // Resolve bare relative paths against session working directory,
       // or workspace root as a fallback when workingDirectory is not set.
       const resolved = (() => {
-        if (path.startsWith('/') || path.startsWith('~/')) return path
+        if (normalizedPath.startsWith('/') || normalizedPath.startsWith('~/')) return normalizedPath
 
         const baseDir = workingDirectory || activeWorkspace?.rootPath
-        if (!baseDir) return path
+        if (!baseDir) return normalizedPath
 
         const cleanedBase = baseDir.replace(/\/+$/, '')
-        const cleanedPath = path.replace(/^\.\//, '')
+        const cleanedPath = normalizedPath.replace(/^\.\//, '')
         return `${cleanedBase}/${cleanedPath}`
       })()
 
@@ -357,12 +361,22 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
             const files = matches.filter((m) => m.type === 'file' && m.name === fileName)
             const exact = files.find((m) => m.path === resolved)
             if (exact) {
-              onOpenFile(exact.path)
+              navigate(routes.view.sessionResource({
+                sessionId,
+                resourceKind: 'file',
+                target: exact.path,
+                filter: isSessionsNavigation(navigationState) ? navigationState.filter : undefined,
+              }), { newPanel: true })
               return
             }
 
             if (files.length === 1) {
-              onOpenFile(files[0].path)
+              navigate(routes.view.sessionResource({
+                sessionId,
+                resourceKind: 'file',
+                target: files[0].path,
+                filter: isSessionsNavigation(navigationState) ? navigationState.filter : undefined,
+              }), { newPanel: true })
               toast.info(t('chat.openedClosestMatch', { path: files[0].relativePath }))
               return
             }
@@ -372,9 +386,14 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
         }
       }
 
-      onOpenFile(resolved)
+      navigate(routes.view.sessionResource({
+        sessionId,
+        resourceKind: 'file',
+        target: resolved,
+        filter: isSessionsNavigation(navigationState) ? navigationState.filter : undefined,
+      }), { newPanel: true })
     },
-    [onOpenFile, workingDirectory, activeWorkspace?.rootPath]
+    [workingDirectory, activeWorkspace?.rootPath, navigationState, sessionId, t]
   )
 
   const handleOpenUrl = React.useCallback(

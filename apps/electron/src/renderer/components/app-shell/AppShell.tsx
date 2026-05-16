@@ -542,6 +542,9 @@ function AppShellContent({
   const [sessionListWidth, setSessionListWidth] = React.useState(() => {
     return storage.get(storage.KEYS.sessionListWidth, 300)
   })
+  const sidebarWidthRef = React.useRef(sidebarWidth)
+  const sessionListWidthRef = React.useRef(sessionListWidth)
+  const isSidebarVisibleRef = React.useRef(isSidebarVisible)
 
   // Hides both sidebar and navigator (CMD+. toggle)
   // Seed from either focused window param or persisted preference, then keep it toggleable.
@@ -578,9 +581,23 @@ function AppShellContent({
   const [sessionListHandleY, setSessionListHandleY] = React.useState<number | null>(null)
   const resizeHandleRef = React.useRef<HTMLDivElement>(null)
   const sessionListHandleRef = React.useRef<HTMLDivElement>(null)
+  const resizeRafRef = React.useRef<number | null>(null)
+  const pendingResizePointRef = React.useRef<{ x: number; y: number } | null>(null)
   const [session, setSession] = useSession()
   const { resolvedMode, isDark, setMode } = useTheme()
   const { canGoBack, canGoForward, goBack, goForward, navigateToSource, navigateToSession } = useNavigation()
+
+  React.useEffect(() => {
+    sidebarWidthRef.current = sidebarWidth
+  }, [sidebarWidth])
+
+  React.useEffect(() => {
+    sessionListWidthRef.current = sessionListWidth
+  }, [sessionListWidth])
+
+  React.useEffect(() => {
+    isSidebarVisibleRef.current = isSidebarVisible
+  }, [isSidebarVisible])
 
   // Double-Esc interrupt feature: first Esc shows warning, second Esc interrupts
   const { handleEscapePress } = useEscapeInterrupt()
@@ -1227,48 +1244,79 @@ function AppShellContent({
   React.useEffect(() => {
     if (!isResizing) return
 
-    const handleMouseMove = (e: MouseEvent) => {
+    const applyResize = () => {
+      resizeRafRef.current = null
+      const point = pendingResizePointRef.current
+      if (!point) return
+
       if (isResizing === 'sidebar') {
-        const newWidth = Math.min(Math.max(e.clientX, 180), 320)
-        setSidebarWidth(newWidth)
+        const newWidth = Math.min(Math.max(point.x, 180), 320)
+        sidebarWidthRef.current = newWidth
+        setSidebarWidth((prev) => prev === newWidth ? prev : newWidth)
         if (resizeHandleRef.current) {
           const rect = resizeHandleRef.current.getBoundingClientRect()
-          setSidebarHandleY(e.clientY - rect.top)
+          const nextY = point.y - rect.top
+          setSidebarHandleY((prev) => prev === nextY ? prev : nextY)
         }
       } else if (isResizing === 'session-list') {
-        const offset = isSidebarVisible ? sidebarWidth : 0
-        const newWidth = Math.min(Math.max(e.clientX - offset, 240), 480)
-        setSessionListWidth(newWidth)
+        const offset = isSidebarVisibleRef.current ? sidebarWidthRef.current : 0
+        const newWidth = Math.min(Math.max(point.x - offset, 240), 480)
+        sessionListWidthRef.current = newWidth
+        setSessionListWidth((prev) => prev === newWidth ? prev : newWidth)
         if (sessionListHandleRef.current) {
           const rect = sessionListHandleRef.current.getBoundingClientRect()
-          setSessionListHandleY(e.clientY - rect.top)
+          const nextY = point.y - rect.top
+          setSessionListHandleY((prev) => prev === nextY ? prev : nextY)
         }
       }
+    }
+
+    const scheduleResize = (x: number, y: number) => {
+      pendingResizePointRef.current = { x, y }
+      if (resizeRafRef.current !== null) return
+      resizeRafRef.current = window.requestAnimationFrame(applyResize)
+    }
+
+    const handleMouseMove = (e: MouseEvent) => {
+      scheduleResize(e.clientX, e.clientY)
     }
 
     const handleMouseUp = () => {
+      if (resizeRafRef.current !== null) {
+        window.cancelAnimationFrame(resizeRafRef.current)
+        resizeRafRef.current = null
+      }
+      applyResize()
+
       if (isResizing === 'sidebar') {
-        storage.set(storage.KEYS.sidebarWidth, sidebarWidth)
+        storage.set(storage.KEYS.sidebarWidth, sidebarWidthRef.current)
         setSidebarHandleY(null)
       } else if (isResizing === 'session-list') {
-        storage.set(storage.KEYS.sessionListWidth, sessionListWidth)
+        storage.set(storage.KEYS.sessionListWidth, sessionListWidthRef.current)
         setSessionListHandleY(null)
       }
+      pendingResizePointRef.current = null
       setIsResizing(null)
     }
 
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
 
     return () => {
+      if (resizeRafRef.current !== null) {
+        window.cancelAnimationFrame(resizeRafRef.current)
+        resizeRafRef.current = null
+      }
+      pendingResizePointRef.current = null
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
   }, [
     isResizing,
-    sidebarWidth,
-    sessionListWidth,
-    isSidebarVisible,
   ])
 
   // Spring transition config - shared between sidebar and header
