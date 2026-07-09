@@ -18,7 +18,8 @@
     "./handlers/rpc": "./src/handlers/rpc/index.ts",
     "./handlers/rpc/*": "./src/handlers/rpc/*.ts",
     "./sessions": "./src/sessions/index.ts",
-    "./webui": "./src/webui/index.ts"
+    "./webui": "./src/webui/index.ts",
+    "./tasks": "./src/tasks/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -29,7 +30,7 @@
     "jose": "^6.0.0",
     "ws": "^8.19.0",
     "sharp": "0.34.5",
-    "@earendil-works/pi-ai": "0.79.9"
+    "@earendil-works/pi-ai": "0.80.3"
   },
   "devDependencies": {
     "typescript": "^5.8.2",

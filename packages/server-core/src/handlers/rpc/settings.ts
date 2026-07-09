@@ -49,6 +49,10 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.settings.GET_SENSITIVE_PATH_ALLOW_RULES,
   RPC_CHANNELS.settings.REMOVE_SENSITIVE_PATH_ALLOW_RULE,
   RPC_CHANNELS.dialog.OPEN_FOLDER,
+  RPC_CHANNELS.rtk.GET_ENABLED,
+  RPC_CHANNELS.rtk.SET_ENABLED,
+  RPC_CHANNELS.rtk.GET_STATUS,
+  RPC_CHANNELS.rtk.GET_GAIN,
 ] as const
 
 export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): void {

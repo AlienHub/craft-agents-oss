@@ -111,6 +111,7 @@ export {
 // UI primitives
 export {
   Spinner,
+  LoadingIndicator,
   SimpleDropdown,
   SimpleDropdownItem,
   PreviewHeader,
@@ -134,6 +135,7 @@ export {
   IslandFollowUpContentView,
   useIslandNavigation,
   type SpinnerProps,
+  type LoadingIndicatorProps,
   type SimpleDropdownProps,
   type SimpleDropdownItemProps,
   type PreviewHeaderProps,

@@ -76,7 +76,8 @@
     "undici": "^7.22.0",
     "unist-util-visit": "^5.0.0",
     "vaul": "^1.1.2",
-    "ws": "^8.19.0"
+    "ws": "^8.19.0",
+    "react-colorful": "^5.7.0"
   },
   "devDependencies": {
     "@types/ws": "^8.18.1"

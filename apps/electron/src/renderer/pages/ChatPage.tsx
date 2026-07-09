@@ -9,7 +9,7 @@ import * as React from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { AlertCircle, Globe, Copy, RefreshCw, Link2Off, Info, FolderTree } from 'lucide-react'
+import { AlertCircle, Globe, Copy, RefreshCw, Link2Off, Info, FolderTree, Pencil } from 'lucide-react'
 import { ChatDisplay, type ChatDisplayHandle } from '@/components/app-shell/ChatDisplay'
 import { WorkingDirectoryPanel } from '@/components/app-shell/WorkingDirectoryPanel'
 import * as storage from '@/lib/local-storage'
@@ -31,6 +31,7 @@ import { coerceInputText } from '@/lib/input-text'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
 import { normalizeLocalFileTarget } from '@/lib/file-link-target'
 import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, loadedSessionsAtom, sessionMetaMapAtom } from '@/atoms/sessions'
+import { kanbanEditorTargetAtom } from '@/atoms/kanban'
 import { getSessionTitle } from '@/utils/session'
 import { useNavigationState, isSessionsNavigation } from '@/contexts/NavigationContext'
 // Model resolution: connection.defaultModel (no hardcoded defaults)
@@ -591,6 +592,24 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onSessionLabelsChange?.(sessionId, newLabels)
   }, [sessionId, onSessionLabelsChange])
 
+  // Task orchestrator sessions (spec-backed, top-level) get an "Edit task" header action
+  // that opens the board's full-pane Task editor prefilled from task.yaml — the same
+  // surface as creation, so goal/acceptance criteria/subtasks can change and the whole
+  // task can be re-run (Save & Run mints a fresh Conductor run).
+  const taskSlug = sessionMeta?.taskSlug
+  const isTaskOrchestrator = !!taskSlug && !sessionMeta?.parentSessionId
+  const setKanbanEditorTarget = useSetAtom(kanbanEditorTargetAtom)
+  const handleEditTask = React.useCallback(() => {
+    if (!taskSlug) return
+    setKanbanEditorTarget({
+      mode: 'edit',
+      sessionId,
+      taskSlug,
+      initialTitle: sessionMeta ? getSessionTitle(sessionMeta) : undefined,
+    })
+    navigate(routes.view.board())
+  }, [taskSlug, sessionId, sessionMeta, setKanbanEditorTarget])
+
   const handleDelete = React.useCallback(async () => {
     await onDeleteSession(sessionId)
   }, [sessionId, onDeleteSession])
@@ -729,7 +748,26 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     )
   }, [isCompactMode, sessionId, session?.sessionFolderPath, sessionMeta])
 
-  const headerActions = isCompactMode ? compactInfoButton : shareButton
+  // Pencil opens the Task editor for orchestrator sessions; rendered before the
+  // share/info action. The slot div has no gap of its own, so compose with one here.
+  const editTaskButton = React.useMemo(() => {
+    if (!isTaskOrchestrator) return undefined
+    return (
+      <PanelHeaderCenterButton
+        icon={<Pencil className="h-4 w-4" />}
+        tooltip={t('kanban.editTask')}
+        onClick={handleEditTask}
+      />
+    )
+  }, [isTaskOrchestrator, handleEditTask, t])
+
+  const primaryHeaderAction = isCompactMode ? compactInfoButton : shareButton
+  const headerActions = editTaskButton ? (
+    <div className="flex items-center gap-1.5">
+      {editTaskButton}
+      {primaryHeaderAction}
+    </div>
+  ) : primaryHeaderAction
 
   // Files side panel (working-directory tree embedded beside the conversation).
   // Falls back to the workspace root when the session has no explicit cwd.
