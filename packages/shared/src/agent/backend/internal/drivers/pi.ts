@@ -225,6 +225,19 @@ async function testAnthropicCompatible(
   }
 }
 
+export function resolveAnthropicCompatibleTestBaseUrl(input: {
+  piAuthProvider: string
+  explicitBaseUrl?: string
+  modelBaseUrl?: string
+  providerBaseUrl?: string
+}): string | undefined {
+  const explicitBaseUrl = input.explicitBaseUrl?.trim()
+  const prefersModelBaseUrl = input.piAuthProvider === 'opencode-go' || input.piAuthProvider === 'opencode'
+  return prefersModelBaseUrl
+    ? (input.modelBaseUrl || explicitBaseUrl || input.providerBaseUrl)
+    : (explicitBaseUrl || input.modelBaseUrl || input.providerBaseUrl)
+}
+
 export const piDriver: ProviderDriver = {
   provider: 'pi',
   buildRuntime: ({ context, providerOptions, resolvedPaths }) => ({
@@ -302,7 +315,12 @@ export const piDriver: ProviderDriver = {
       return null;
     }
 
-    const baseUrl = args.baseUrl?.trim() || modelBaseUrl || getPiProviderBaseUrl(piAuthProvider);
+    const baseUrl = resolveAnthropicCompatibleTestBaseUrl({
+      piAuthProvider,
+      explicitBaseUrl: args.baseUrl,
+      modelBaseUrl,
+      providerBaseUrl: getPiProviderBaseUrl(piAuthProvider),
+    });
     if (!baseUrl) {
       return { success: false, error: 'Could not determine API endpoint for provider' };
     }

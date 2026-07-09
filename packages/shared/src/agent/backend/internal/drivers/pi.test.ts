@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { piDriver } from './pi.ts';
+import { piDriver, resolveAnthropicCompatibleTestBaseUrl } from './pi.ts';
 
 describe('piDriver.buildRuntime custom endpoint models', () => {
   it('preserves explicit per-model supportsImages values', () => {
@@ -38,5 +38,25 @@ describe('piDriver.buildRuntime custom endpoint models', () => {
       { id: 'text-only-model', supportsImages: false },
       'plain-model',
     ]);
+  });
+});
+
+describe('resolveAnthropicCompatibleTestBaseUrl', () => {
+  it('uses OpenCode model base URLs before the UI base URL', () => {
+    expect(resolveAnthropicCompatibleTestBaseUrl({
+      piAuthProvider: 'opencode-go',
+      explicitBaseUrl: 'https://opencode.ai/zen/go/v1',
+      modelBaseUrl: 'https://opencode.ai/zen/go',
+      providerBaseUrl: 'https://opencode.ai/zen/go/v1',
+    })).toBe('https://opencode.ai/zen/go');
+  });
+
+  it('keeps explicit base URL priority for regular providers', () => {
+    expect(resolveAnthropicCompatibleTestBaseUrl({
+      piAuthProvider: 'anthropic',
+      explicitBaseUrl: 'https://proxy.example/v1',
+      modelBaseUrl: 'https://api.anthropic.com',
+      providerBaseUrl: 'https://api.anthropic.com',
+    })).toBe('https://proxy.example/v1');
   });
 });

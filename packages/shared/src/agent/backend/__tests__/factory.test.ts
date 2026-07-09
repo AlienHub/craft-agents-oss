@@ -289,6 +289,13 @@ describe('phase4 backend abstraction APIs', () => {
       baseUrl: 'https://my-anthropic-proxy.internal/v1',
       customEndpoint: { api: 'anthropic-messages' },
     })).toEqual({ providerType: 'pi_compat', piAuthProvider: 'anthropic', customEndpoint: { api: 'anthropic-messages' } });
+
+    expect(resolveSetupTestConnectionHint({
+      provider: 'pi',
+      baseUrl: 'https://opencode.ai/zen/go/v1',
+      piAuthProvider: 'opencode-go',
+      customEndpoint: {},
+    })).toEqual({ providerType: 'pi_compat', piAuthProvider: 'opencode-go', customEndpoint: {} });
   });
 
   it('fetchBackendModels dispatches for pi provider', async () => {
