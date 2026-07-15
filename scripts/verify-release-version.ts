@@ -40,10 +40,10 @@ if (!tag) {
   fail('Expected a release tag argument, for example: v0.1.0');
 }
 
-const match = tag.match(/^v(\d+\.\d+\.\d+)$/);
+const match = tag.match(/^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/);
 
 if (!match) {
-  fail(`Release tag must look like v0.1.0; received ${tag}`);
+  fail(`Release tag must look like v0.1.0 or v0.1.0-bugfix; received ${tag}`);
 }
 
 const expectedVersion = match[1];

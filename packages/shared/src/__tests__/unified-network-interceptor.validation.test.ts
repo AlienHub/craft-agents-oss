@@ -195,6 +195,21 @@ describe('unified-network-interceptor validators (#613)', () => {
       }
     });
 
+    it('throws overlong_input_id when optional input item id exceeds upstream limit', () => {
+      const body = {
+        input: [
+          { type: 'message', role: 'user', id: 'x'.repeat(65), content: 'hello' },
+        ],
+      };
+      try {
+        validateOpenAiResponsesBody(body);
+        throw new Error('expected throw');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MalformedBodyError);
+        expect((err as InstanceType<typeof MalformedBodyError>).code).toBe('overlong_input_id');
+      }
+    });
+
     it('is a no-op when body has no input array', () => {
       expect(() => validateOpenAiResponsesBody({})).not.toThrow();
       expect(() => validateOpenAiResponsesBody({ input: 'not-an-array' })).not.toThrow();

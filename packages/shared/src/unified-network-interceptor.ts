@@ -44,6 +44,7 @@ type HeadersInitType = Headers | Record<string, string> | string[][];
  * verbose and may contain user prompts/tool args.
  */
 const DEBUG_SSE_RAW = process.env.CRAFT_DEBUG_SSE_RAW === '1';
+const OPENAI_RESPONSES_INPUT_ID_MAX_LENGTH = 64;
 
 // ============================================================================
 // PROXY CONFIGURATION (from env vars injected by parent process)
@@ -140,7 +141,7 @@ interface ApiAdapter {
  */
 export class MalformedBodyError extends Error {
   /** Stable error code for telemetry/UX */
-  readonly code: 'duplicate_tool_call_id' | 'missing_tool_call_id' | 'missing_call_id' | 'orphaned_function_call_output' | 'empty_tool_name';
+  readonly code: 'duplicate_tool_call_id' | 'missing_tool_call_id' | 'missing_call_id' | 'orphaned_function_call_output' | 'empty_tool_name' | 'overlong_input_id';
   /** Human-readable detail to show in logs and surface to the user */
   readonly detail: string;
   /** Adapter name (for diagnostics) */
@@ -1651,6 +1652,13 @@ export function validateOpenAiResponsesBody(body: Record<string, unknown>): void
   for (let i = 0; i < input.length; i++) {
     const entry = input[i];
     if (!entry) continue;
+    if (typeof entry.id === 'string' && entry.id.length > OPENAI_RESPONSES_INPUT_ID_MAX_LENGTH) {
+      throw new MalformedBodyError({
+        code: 'overlong_input_id',
+        detail: `input[${i}].id exceeds ${OPENAI_RESPONSES_INPUT_ID_MAX_LENGTH} characters`,
+        adapter: 'openai-responses',
+      });
+    }
     if (entry.type === 'function_call') {
       const callId = typeof entry.call_id === 'string' ? entry.call_id : '';
       if (!callId) {
@@ -1702,6 +1710,8 @@ export function validateOpenAiResponsesBody(body: Record<string, unknown>): void
  * In-place repair of Responses-API `input[]` arrays that arrive with structural
  * defects we can recover from. Mutates `input` and returns the number of repairs.
  *
+ * - `input[].id` values longer than the OpenAI limit are dropped. They are
+ *   optional item identifiers, while truncating them could corrupt references.
  * - `function_call` entries missing `call_id` get a deterministic synthesized id.
  * - `function_call_output` entries referencing an unknown `call_id` are dropped
  *   (the upstream would 400 anyway; better to lose one tool result than the turn).
@@ -1709,18 +1719,28 @@ export function validateOpenAiResponsesBody(body: Record<string, unknown>): void
  * Exported for focused unit tests.
  */
 export function repairResponsesHistoryInPlace(input: Array<Record<string, unknown>>): {
+  droppedOverlongInputIds: number;
   synthesizedCallIds: number;
   droppedOrphans: number;
 } {
+  let droppedOverlongInputIds = 0;
   let synthesizedCallIds = 0;
   let droppedOrphans = 0;
   const knownCallIds = new Set<string>();
 
-  // First pass: synthesize missing call_ids on function_call entries so later
-  // entries can reference them.
+  // First pass: remove invalid optional item ids and synthesize missing
+  // call_ids on function_call entries so later entries can reference them.
   for (let i = 0; i < input.length; i++) {
     const entry = input[i];
     if (!entry) continue;
+    if (typeof entry.id === 'string' && entry.id.length > OPENAI_RESPONSES_INPUT_ID_MAX_LENGTH) {
+      const { type } = entry;
+      const originalLength = entry.id.length;
+      delete entry.id;
+      droppedOverlongInputIds++;
+      const typeLabel = typeof type === 'string' ? type : 'unknown';
+      debugLog(`[OpenAI Responses Repair] Dropped overlong input[${i}].id (${originalLength} chars, type=${typeLabel})`);
+    }
     if (entry.type !== 'function_call') continue;
     if (typeof entry.call_id === 'string' && entry.call_id.length > 0) {
       knownCallIds.add(entry.call_id);
@@ -1738,7 +1758,7 @@ export function repairResponsesHistoryInPlace(input: Array<Record<string, unknow
   }
 
   if (synthesizedCallIds === 0 && input.every(e => e.type !== 'function_call_output')) {
-    return { synthesizedCallIds, droppedOrphans };
+    return { droppedOverlongInputIds, synthesizedCallIds, droppedOrphans };
   }
 
   // Second pass: drop orphan function_call_output entries.
@@ -1754,7 +1774,7 @@ export function repairResponsesHistoryInPlace(input: Array<Record<string, unknow
     }
   }
 
-  return { synthesizedCallIds, droppedOrphans };
+  return { droppedOverlongInputIds, synthesizedCallIds, droppedOrphans };
 }
 
 /** Tiny stable hash for synthesizing deterministic call_ids. Not a security primitive. */

@@ -46,6 +46,20 @@ describe('unified-network-interceptor responses-history repair (#613)', () => {
     expect((input[1] as { call_id: string }).call_id).toBe('call_1');
   });
 
+  it('drops overlong optional input item ids before validation', () => {
+    const input: Array<Record<string, unknown>> = [
+      { type: 'message', role: 'user', id: 'x'.repeat(65), content: 'hello' },
+      { type: 'function_call', id: 'y'.repeat(80), call_id: 'call_1', name: 'ls', arguments: '{}' },
+      { type: 'function_call_output', call_id: 'call_1', output: 'real' },
+    ];
+    const result = repairResponsesHistoryInPlace(input);
+    expect(result.droppedOverlongInputIds).toBe(2);
+    expect(input[0]!.id).toBeUndefined();
+    expect(input[1]!.id).toBeUndefined();
+    expect(input[1]!.call_id).toBe('call_1');
+    expect(() => validateOpenAiResponsesBody({ input })).not.toThrow();
+  });
+
   it('keeps function_call_output that references a synthesized call_id', () => {
     // Pi SDK drops call_id on the function_call but the output still has one;
     // repair must synthesize for the call AND link the output.
