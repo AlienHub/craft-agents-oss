@@ -804,6 +804,7 @@ export function addWorkspace(workspace: Omit<Workspace, 'id' | 'createdAt' | 'sl
   }
 
   const slug = extractWorkspaceSlugFromPath(workspace.rootPath, '');
+  let workspaceConfig = loadWorkspaceConfig(workspace.rootPath);
 
   // Check if workspace with same rootPath already exists
   const existing = config.workspaces.find(w => w.rootPath === workspace.rootPath);
@@ -812,7 +813,8 @@ export function addWorkspace(workspace: Omit<Workspace, 'id' | 'createdAt' | 'sl
     const updated: Workspace = {
       ...existing,
       ...workspace,
-      slug,
+      name: workspaceConfig?.name ?? workspace.name,
+      slug: workspaceConfig?.slug ?? slug,
       id: existing.id,
       createdAt: existing.createdAt,
     };
@@ -822,17 +824,18 @@ export function addWorkspace(workspace: Omit<Workspace, 'id' | 'createdAt' | 'sl
     return updated;
   }
 
+  // Create workspace folder structure if it doesn't exist
+  if (!workspaceConfig) {
+    workspaceConfig = createWorkspaceAtPath(workspace.rootPath, workspace.name);
+  }
+
   const newWorkspace: Workspace = {
     ...workspace,
-    slug,
-    id: generateWorkspaceId(),
-    createdAt: Date.now(),
+    name: workspaceConfig.name,
+    slug: workspaceConfig.slug || slug,
+    id: workspaceConfig.id || generateWorkspaceId(),
+    createdAt: workspaceConfig.createdAt || Date.now(),
   };
-
-  // Create workspace folder structure if it doesn't exist
-  if (!isValidWorkspace(newWorkspace.rootPath)) {
-    createWorkspaceAtPath(newWorkspace.rootPath, newWorkspace.name);
-  }
 
   config.workspaces.push(newWorkspace);
 

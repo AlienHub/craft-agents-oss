@@ -44,7 +44,7 @@ describe('pickProviderAppropriateMiniModel', () => {
   });
 
   it('openai-codex: skips denied codex-mini variants, returns first resolvable candidate', () => {
-    // PI_PREFERRED_DEFAULTS['openai-codex'] = ['gpt-5.5', 'gpt-5.2', ...].
+    // PI_PREFERRED_DEFAULTS['openai-codex'] starts with GPT-5.6, then GPT-5.5/5.2.
     // None of these are *codex-mini*, so isDeniedMiniModelId won't filter any.
     // But we verify the filter works by registering only gpt-5.2 as resolvable.
     const registry = createMockRegistry({
@@ -66,7 +66,7 @@ describe('pickProviderAppropriateMiniModel', () => {
   });
 
   it('openai: returns first resolvable candidate from preferred list', () => {
-    // PI_PREFERRED_DEFAULTS.openai = ['gpt-5.5', 'gpt-5.2', 'gpt-5.1', ...].
+    // PI_PREFERRED_DEFAULTS.openai starts with GPT-5.6, then GPT-5.5/5.2.
     // gpt-5.5 is resolvable → returned first.
     const registry = createMockRegistry({
       openai: [
