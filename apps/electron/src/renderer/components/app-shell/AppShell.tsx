@@ -147,6 +147,7 @@ import {
 import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
+import { resolveInheritedNewSessionParams } from "./new-session-filter-inheritance"
 
 function getWorkspaceDataPath(rootPath: string): string {
   return `${rootPath.replace(/\/$/, '')}/.zo`
@@ -2061,32 +2062,6 @@ function AppShellContent({
     }
   }, [activeWorkspace?.id, navigate, t])
 
-  /**
-   * Resolve the "inherit sole active filter" rule: if exactly one filter value
-   * is selected across statuses + labels + projects, return it as new-session
-   * params. Otherwise return null (fall back to workspace defaults).
-   */
-  const resolveInheritedNewSessionParams = useCallback((): { status?: string; label?: string; project?: string } | null => {
-    const statusCount = listFilter.size
-    const labelCount = labelFilter.size
-    const projectCount = projectFilter.size
-    const total = statusCount + labelCount + projectCount
-    if (total !== 1) return null
-    if (statusCount === 1) {
-      const [stateId] = [...listFilter.keys()]
-      return { status: stateId }
-    }
-    if (labelCount === 1) {
-      const [labelId] = [...labelFilter.keys()]
-      return { label: labelId }
-    }
-    if (projectCount === 1) {
-      const [projectId] = [...projectFilter.keys()]
-      return { project: projectId }
-    }
-    return null
-  }, [listFilter, labelFilter, projectFilter])
-
   // Create a new chat and select it
   const handleNewChat = useCallback((newPanel: boolean = false) => {
     if (!activeWorkspace) return
@@ -2095,8 +2070,12 @@ function AppShellContent({
     setSearchActive(false)
     setSearchQuery('')
 
-    // Inherit sole-active filter into the new session when unambiguous.
-    const inherited = resolveInheritedNewSessionParams()
+    // Inherit the sole included filter; exclusions only control list visibility.
+    const inherited = resolveInheritedNewSessionParams({
+      statuses: listFilter,
+      labels: labelFilter,
+      projects: projectFilter,
+    })
 
     // Delegate to NavigationContext which handles session creation
     navigate(
@@ -2106,7 +2085,7 @@ function AppShellContent({
 
     // Focus the chat input after navigation completes
     setTimeout(() => focusZone('chat', { intent: 'programmatic' }), 50)
-  }, [activeWorkspace, focusZone, navigate, resolveInheritedNewSessionParams])
+  }, [activeWorkspace, focusZone, navigate, listFilter, labelFilter, projectFilter])
 
   // Create a brand new dedicated browser window and focus it.
   // Intentionally unbound: this action should always create a NEW window.
